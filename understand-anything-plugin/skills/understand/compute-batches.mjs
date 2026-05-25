@@ -194,11 +194,30 @@ function buildBatchOfMap(allBatches) {
 }
 
 /**
+ * Most-specific advice scope per code file. When no advice matches a file → root scope ".".
+ * When adviceContext is null → every file gets scope "." (current/pre-advice behavior).
+ */
+function buildScopeMap(codeFiles, ctx) {
+  const m = new Map();
+  if (!ctx) {
+    for (const f of codeFiles) m.set(f.path, '.');
+    return m;
+  }
+  for (const f of codeFiles) {
+    const matches = core.adviceForPath(ctx, f.path);
+    // adviceForPath returns broad-to-specific; last entry is most-specific.
+    const primary = matches.length ? matches[matches.length - 1].scope : '.';
+    m.set(f.path, primary);
+  }
+  return m;
+}
+
+/**
  * Returns Map<path, communityId> via Louvain. May throw — caller must catch
  * and fall back if it does. Honors UA_COMPUTE_BATCHES_FORCE_LOUVAIN_THROW=1
  * to allow tests to exercise the fallback path.
  */
-function runLouvain(codeFiles, importMap) {
+function runLouvain(codeFiles, importMap, scopeMap) {
   if (process.env.UA_COMPUTE_BATCHES_FORCE_LOUVAIN_THROW === '1') {
     throw new Error('forced throw via UA_COMPUTE_BATCHES_FORCE_LOUVAIN_THROW');
   }
@@ -206,12 +225,15 @@ function runLouvain(codeFiles, importMap) {
   for (const f of codeFiles) g.addNode(f.path);
   for (const [src, targets] of Object.entries(importMap)) {
     if (!g.hasNode(src)) continue;
+    const srcScope = scopeMap.get(src);
     for (const tgt of targets) {
       if (!g.hasNode(tgt) || src === tgt || g.hasEdge(src, tgt)) continue;
+      // Advice-aware: cross-scope import edges do not influence community membership.
+      if (scopeMap.get(tgt) !== srcScope) continue;
       g.addEdge(src, tgt);
     }
   }
-  const cs = louvain(g);  // { nodeId: communityId }
+  const cs = louvain(g);
   return new Map(Object.entries(cs));
 }
 
@@ -243,58 +265,55 @@ function countBasedAssignment(codeFiles, batchSize = 12) {
  * keepers first preserving their relative order, misc batches appended).
  */
 function mergeSmallBatches(bareBatches) {
-  // MIN_BATCH_SIZE=3: below this, file-analyzer dispatch overhead (subagent
-  // spin-up, prompt setup) dwarfs the per-file analysis cost — not worth a
-  // standalone batch.
   const MIN_BATCH_SIZE = 3;
-  // MAX_MERGE_TARGET=25: stays below MAX_COMMUNITY_SIZE=35 so the misc-batch
-  // agent retains headroom for neighborMap context without overflowing.
   const MAX_MERGE_TARGET = 25;
 
   const keepers = [];
-  const smallMergeable = [];
+  const smallByScope = new Map();
   for (const b of bareBatches) {
     if (b.mergeable && b.files.length < MIN_BATCH_SIZE) {
-      smallMergeable.push(b);
+      const scope = b.primaryAdviceScope ?? '.';
+      if (!smallByScope.has(scope)) smallByScope.set(scope, []);
+      smallByScope.get(scope).push(b);
     } else {
       keepers.push(b);
     }
   }
 
-  if (smallMergeable.length === 0) {
-    // Nothing to merge — strip mergeable flag and renumber for cleanliness.
+  if (smallByScope.size === 0) {
     return keepers.map((b, i) => ({
       batchIndex: i + 1,
       files: b.files,
+      primaryAdviceScope: b.primaryAdviceScope ?? '.',
     }));
   }
 
-  // Pool and sort deterministically by path so repeated runs match byte-for-byte.
-  const pooledFiles = smallMergeable
-    .flatMap(b => b.files)
-    .sort((a, b) => a.path.localeCompare(b.path));
-
   const miscBatches = [];
-  for (let i = 0; i < pooledFiles.length; i += MAX_MERGE_TARGET) {
-    miscBatches.push({ files: pooledFiles.slice(i, i + MAX_MERGE_TARGET) });
+  let totalPooled = 0;
+  for (const [scope, smalls] of smallByScope) {
+    const pooledFiles = smalls
+      .flatMap((b) => b.files)
+      .sort((a, b) => a.path.localeCompare(b.path));
+    totalPooled += pooledFiles.length;
+    for (let i = 0; i < pooledFiles.length; i += MAX_MERGE_TARGET) {
+      miscBatches.push({
+        files: pooledFiles.slice(i, i + MAX_MERGE_TARGET),
+        primaryAdviceScope: scope,
+      });
+    }
   }
 
-  // Use `Info:` rather than `Warning:` — singleton consolidation is a
-  // routine optimization, not a fallback/degrade path. Per
-  // [[feedback_visible_warnings]] only fallbacks should bubble as Warning:
-  // to the Phase 7 final report. Real warnings would get drowned out if
-  // every normal Louvain run with singletons (i.e. almost every run) added
-  // a Warning: line.
   process.stderr.write(
-    `Info: compute-batches: merged ${smallMergeable.length} small batches ` +
-    `(${pooledFiles.length} files) into ${miscBatches.length} misc batches ` +
-    `— singletons and orphans consolidated\n`,
+    `Info: compute-batches: merged small batches per advice scope ` +
+    `(${smallByScope.size} scopes, ${totalPooled} files) into ${miscBatches.length} misc batches ` +
+    `— singletons and orphans consolidated within scope\n`,
   );
 
   const final = [...keepers, ...miscBatches];
   return final.map((b, i) => ({
     batchIndex: i + 1,
     files: b.files,
+    primaryAdviceScope: b.primaryAdviceScope ?? '.',
   }));
 }
 
@@ -342,19 +361,46 @@ async function main() {
 
   process.stderr.write(`Loaded ${files.length} files (${codeFiles.length} code).\n`);
 
+  // Optional: load Phase 0.6 advice context if present.
+  let adviceContext = null;
+  const advicePath = join(projectRoot, '.understand-anything', 'intermediate', 'advice-context.json');
+  if (existsSync(advicePath)) {
+    try {
+      adviceContext = JSON.parse(readFileSync(advicePath, 'utf-8'));
+      process.stderr.write(`Loaded advice context: ${adviceContext.files?.length ?? 0} files\n`);
+    } catch (err) {
+      process.stderr.write(
+        `Warning: compute-batches: advice-context.json unreadable (${err.message}) ` +
+        `— falling back to scope-unaware batching\n`,
+      );
+    }
+  }
+
   const exportsByPath = await extractExports(projectRoot, codeFiles);
+
+  const scopeMap = buildScopeMap(codeFiles, adviceContext);
 
   let algorithm = 'louvain';
   let perFileCommunity;
   try {
-    perFileCommunity = runLouvain(codeFiles, importMap);
+    perFileCommunity = runLouvain(codeFiles, importMap, scopeMap);
   } catch (err) {
     process.stderr.write(
       `Warning: compute-batches: Louvain failed (${err.message}) ` +
-      `— falling back to count-based grouping (12 files/batch) ` +
+      `— falling back to count-based grouping (12 files/batch, scope-respecting) ` +
       `— module semantic boundaries lost\n`,
     );
-    perFileCommunity = countBasedAssignment(codeFiles, 12);
+    perFileCommunity = new Map();
+    const filesByScope = new Map();
+    for (const f of codeFiles) {
+      const scope = scopeMap.get(f.path) ?? '.';
+      if (!filesByScope.has(scope)) filesByScope.set(scope, []);
+      filesByScope.get(scope).push(f);
+    }
+    for (const [scope, scopeFiles] of filesByScope) {
+      const partial = countBasedAssignment(scopeFiles, 12);
+      for (const [path, cid] of partial) perFileCommunity.set(path, `${scope}::${cid}`);
+    }
     algorithm = 'count-fallback';
   }
 
@@ -423,6 +469,17 @@ async function main() {
     files: g.files,
     mergeable: g.mergeable,
   }));
+  for (const b of codeBatchObjsBare) {
+    const scopes = new Set(b.files.map((f) => scopeMap.get(f.path) ?? '.'));
+    b.primaryAdviceScope = scopes.size === 1 ? [...scopes][0] : '.';
+  }
+  for (const b of nonCodeBatchObjsBare) {
+    // Non-code groups are already directory-clustered; derive scope from any file.
+    const firstPath = b.files[0]?.path ?? '';
+    b.primaryAdviceScope = adviceContext
+      ? (core.adviceForPath(adviceContext, firstPath).at(-1)?.scope ?? '.')
+      : '.';
+  }
   const bareBatches = [...codeBatchObjsBare, ...nonCodeBatchObjsBare];
   const mergedBareBatches = mergeSmallBatches(bareBatches);
   const batchOf = buildBatchOfMap(mergedBareBatches);
@@ -490,7 +547,13 @@ async function main() {
 
       if (kept.length) neighborMap[f.path] = kept;
     }
-    return { batchIndex: b.batchIndex, files: b.files, batchImportData, neighborMap };
+    return {
+      batchIndex: b.batchIndex,
+      files: b.files,
+      primaryAdviceScope: b.primaryAdviceScope ?? '.',
+      batchImportData,
+      neighborMap,
+    };
   });
 
   let finalBatches = batches;

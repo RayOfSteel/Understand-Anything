@@ -9,6 +9,7 @@ Run from the repo root:
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -1181,6 +1182,70 @@ class TestUnrecognizedBatchFilename(unittest.TestCase):
         node_ids = {n["id"] for n in assembled["nodes"]}
         self.assertNotIn("file:src/x.ts", node_ids)
         self.assertNotIn("file:src/y.ts", node_ids)
+
+
+class AdviceProvenanceTests(unittest.TestCase):
+    def test_advice_files_for_path_returns_broad_to_specific(self) -> None:
+        context = {
+            "files": [
+                {"path": ".understandadvice", "scope": ".", "content": "root"},
+                {"path": "repos/GlobalLine/.understandadvice", "scope": "repos/GlobalLine", "content": "gl"},
+                {"path": "repos/GlobalLine/Server/.understandadvice", "scope": "repos/GlobalLine/Server", "content": "server"},
+            ]
+        }
+
+        matches = mbg.advice_files_for_path(context, "repos/GlobalLine/Server/start.proj")
+
+        self.assertEqual([m["path"] for m in matches], [
+            ".understandadvice",
+            "repos/GlobalLine/.understandadvice",
+            "repos/GlobalLine/Server/.understandadvice",
+        ])
+
+    def test_annotates_nodes_and_cross_scope_edges(self) -> None:
+        project_root = Path(self._testMethodName)
+        try:
+            intermediate = project_root / ".understand-anything" / "intermediate"
+            intermediate.mkdir(parents=True)
+            (intermediate / "advice-context.json").write_text(
+                json.dumps({
+                    "files": [
+                        {"path": ".understandadvice", "scope": ".", "content": "root"},
+                        {"path": "repos/GlobalLine/.understandadvice", "scope": "repos/GlobalLine", "content": "gl"},
+                        {"path": "repos/Sql/.understandadvice", "scope": "repos/Sql", "content": "sql"},
+                    ]
+                }),
+                encoding="utf-8",
+            )
+            assembled = {
+                "nodes": [
+                    _file_node("repos/GlobalLine/start.proj"),
+                    _file_node("repos/Sql/src/Readme.md"),
+                ],
+                "edges": [
+                    {
+                        "source": "file:repos/GlobalLine/start.proj",
+                        "target": "file:repos/Sql/src/Readme.md",
+                        "type": "related",
+                        "direction": "forward",
+                        "weight": 0.5,
+                    }
+                ],
+            }
+
+            nodes, edges = mbg.annotate_advice_provenance(assembled, project_root)
+
+            self.assertEqual(nodes, 2)
+            self.assertEqual(edges, 1)
+            gl_node = assembled["nodes"][0]
+            sql_node = assembled["nodes"][1]
+            self.assertEqual(gl_node["meta"]["primaryAdviceScope"], "repos/GlobalLine")
+            self.assertEqual(sql_node["meta"]["primaryAdviceScope"], "repos/Sql")
+            self.assertTrue(assembled["edges"][0]["meta"]["crossAdviceScope"])
+        finally:
+            if project_root.exists():
+                import shutil
+                shutil.rmtree(project_root)
 
 
 if __name__ == "__main__":

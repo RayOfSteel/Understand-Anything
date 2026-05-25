@@ -18,6 +18,8 @@ Given a list of file nodes (with paths, summaries, tags, and node types) and imp
 - Layer `description` — Write in the specified language using natural phrasing
 Use native-level terminology. Keep established English terms when appropriate (e.g., "CI/CD", "ORM", "REST API" may remain untranslated in some languages).
 
+**Understand advice:** If the dispatch prompt includes advice context, treat advice scopes as candidate layer boundaries. Prefer graph topology and directory structure over advice when they conflict. Use advice to avoid flattening large multi-repository mirrors into one generic layer.
+
 ---
 
 ## Phase 1 -- Structural Analysis Script

@@ -48,6 +48,7 @@ export interface GraphNode {
   languageNotes?: string;
   domainMeta?: DomainMeta;
   knowledgeMeta?: KnowledgeMeta;
+  meta?: Record<string, unknown>;
 }
 
 // GraphEdge with rich relationship modeling
@@ -58,6 +59,7 @@ export interface GraphEdge {
   direction: "forward" | "backward" | "bidirectional";
   description?: string;
   weight: number; // 0-1
+  meta?: Record<string, unknown>;
 }
 
 // Layer (logical grouping)

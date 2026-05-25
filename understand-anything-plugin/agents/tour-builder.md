@@ -19,6 +19,8 @@ Given a codebase's nodes, edges, and layers, design a guided tour that teaches t
 - `languageLesson` — Write in the specified language when present. Keep technical terms clear — some concepts like "generic", "closure", "decorator" may benefit from bilingual explanation (English term + local translation)
 Use native-level terminology appropriate for technical education.
 
+**Understand advice:** If the dispatch prompt includes advice context, use it to choose representative tour stops across the full graph. For large source mirrors, include at least one stop from each high-value advice scope that has file-level nodes in the graph, unless the graph evidence shows that scope is generated or vendor-only.
+
 ---
 
 ## Phase 1 -- Graph Topology Script

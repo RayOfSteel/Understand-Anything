@@ -1,7 +1,7 @@
 ---
 name: understand
 description: Analyze a codebase to produce an interactive knowledge graph for understanding architecture, components, and relationships
-argument-hint: ["[path] [--full|--auto-update|--no-auto-update|--review|--language <lang>]"]
+argument-hint: ["[path] [--full|--regenerate|--preserve-run|--interactive|--connectivity-pass|--budget <N>|--auto-update|--no-auto-update|--review|--language <lang>]"]
 ---
 
 # /understand
@@ -12,6 +12,11 @@ Analyze the current codebase and produce a `knowledge-graph.json` file in `.unde
 
 - `$ARGUMENTS` may contain:
   - `--full` — Force a full rebuild, ignoring any existing graph
+  - `--regenerate` - Start from the current deterministic substrate plus the prior accepted semantic graph overlay. Carries forward prior graph content unless invalidated.
+  - `--preserve-run` - Archive `intermediate/`, `tmp/`, scanner output, batch output, merge reports, validation output, and final artifacts under `.understand-anything/runs/<attempt-id>/`.
+  - `--interactive` - At orchestrator phase transitions, ask the user whether to inject advice into the next phase. Subagents never ask the user directly.
+  - `--connectivity-pass` - After merge, run a budgeted disconnected-node candidate pass and feed selected patches into the regenerate merge.
+  - `--budget <N>` - Limit connectivity recovery candidate count. Defaults to `25` when `--connectivity-pass` is present.
   - `--auto-update` — Enable automatic graph updates on commit (writes `autoUpdate: true` to `.understand-anything/config.json`)
   - `--no-auto-update` — Disable automatic graph updates (writes `autoUpdate: false` to `.understand-anything/config.json`)
   - `--review` — Run full LLM graph-reviewer instead of inline deterministic validation
@@ -129,6 +134,25 @@ Determine whether to run a full analysis or incremental update.
    mkdir -p $PROJECT_ROOT/.understand-anything/intermediate
    mkdir -p $PROJECT_ROOT/.understand-anything/tmp
    ```
+3.1. **Attempt archive initialization:**
+    - Set `$ATTEMPT_KIND` to `regenerate` when `--regenerate` is present, otherwise `full`.
+    - Set `$PRESERVE_RUN` to true when `--preserve-run`, `--regenerate`, or `--connectivity-pass` is present.
+    - If `$PRESERVE_RUN` is true, write `$PROJECT_ROOT/.understand-anything/tmp/attempt-init.json`:
+      ```json
+      {
+        "kind": "<full-or-regenerate>",
+        "flags": ["<parsed arguments>"],
+        "projectRoot": ".",
+        "baseAttemptId": "<previous accepted attempt id if known>"
+      }
+      ```
+    - Run:
+      ```bash
+      node <SKILL_DIR>/archive-run.mjs init "$PROJECT_ROOT" "$PROJECT_ROOT/.understand-anything/tmp/attempt-init.json" \
+        > "$PROJECT_ROOT/.understand-anything/tmp/attempt-archive.json"
+      ```
+    - Read `attempt-archive.json` and store `$ATTEMPT_ID`, `$ATTEMPT_DIR`, and `$ATTEMPT_MANIFEST_PATH`.
+
 3.5. **Auto-update configuration:**
     - If `--auto-update` is in `$ARGUMENTS`: write `{"autoUpdate": true}` to `$PROJECT_ROOT/.understand-anything/config.json`
     - If `--no-auto-update` is in `$ARGUMENTS`: write `{"autoUpdate": false}` to `$PROJECT_ROOT/.understand-anything/config.json`
@@ -163,11 +187,18 @@ Determine whether to run a full analysis or incremental update.
 
    | Condition | Action |
    |---|---|
+   | `--regenerate` flag + existing graph | Regenerate (full scan/extract current substrate, then merge with prior accepted semantic graph) |
    | `--full` flag in `$ARGUMENTS` | Full analysis (all phases) |
    | No existing graph or meta | Full analysis (all phases) |
    | `--review` flag + existing graph + unchanged commit hash | Skip to Phase 6 (review-only — reuse existing assembled graph) |
    | Existing graph + unchanged commit hash | Ask the user: "The graph is up to date at this commit. Would you like to: **(a)** run a full rebuild (`--full`), **(b)** run the LLM graph reviewer (`--review`), or **(c)** do nothing?" Then follow their choice. If they pick (c), STOP. |
    | Existing graph + changed files | Incremental update (re-analyze changed files only) |
+
+   **Regenerate foundation:** When `--regenerate` is active:
+   - Copy existing `.understand-anything/knowledge-graph.json`, `meta.json`, and `fingerprints.json` into `$ATTEMPT_DIR/final/previous-*` when `$PRESERVE_RUN` is true.
+   - Treat the current scan and extractor output as deterministic substrate.
+   - Treat the prior accepted graph as semantic overlay. Prior batch graph summaries, tags, inferred relationships, domain graph entries, user corrections, and deferred work carry forward unless invalidated.
+   - Prior deterministic extractor outputs are cache, audit, and diff evidence. They do not override current source-derived scan/extraction facts.
 
    **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`, then jump directly to Phase 6 step 3.
 
@@ -186,6 +217,41 @@ Determine whether to run a full analysis or incremental update.
      ```
      Store as `$DIR_TREE`.
    - Detect the project entry point by checking for common patterns (in order): `src/index.ts`, `src/main.ts`, `src/App.tsx`, `index.js`, `main.py`, `manage.py`, `app.py`, `wsgi.py`, `asgi.py`, `run.py`, `__main__.py`, `main.go`, `cmd/*/main.go`, `src/main.rs`, `src/lib.rs`, `src/main/java/**/Application.java`, `Program.cs`, `config.ru`, `index.php`. Store first match as `$ENTRY_POINT`.
+
+---
+
+## Interactive Checkpoints
+
+Only run this section when `--interactive` is present. The orchestrator owns all user interaction. Subagents do not ask the user questions.
+
+Before entering a phase that accepts extra guidance, summarize the next step in conversational language and ask whether the user has advice for the agents.
+
+Prompt format:
+
+```text
+Next I will <plain-language description of next step>. I have <available evidence list> loaded. Any advice for the agents before I start?
+```
+
+If the user gives advice:
+
+1. Write an injection record to `$PROJECT_ROOT/.understand-anything/intermediate/injections/<injection-id>.json`.
+2. Copy the same file to `$ATTEMPT_DIR/injections/<injection-id>.json` when `$PRESERVE_RUN` is true.
+3. Add the record to `$OPEN_INJECTIONS` for prompts in the next phase.
+
+Injection record shape:
+
+```json
+{
+  "id": "inj-<timestamp>",
+  "createdAt": "<ISO timestamp>",
+  "source": "interactive-checkpoint",
+  "appliesTo": ["<next phase>"],
+  "text": "<user advice>",
+  "status": "open"
+}
+```
+
+If the user skips, continue immediately. In non-interactive mode, do not pause.
 
 ---
 
@@ -226,7 +292,58 @@ Set up and verify the `.understandignore` file before scanning.
 3. **If it already exists**, report:
    > Found `.understand-anything/.understandignore`. Review it if needed, then confirm to continue.
    - **Wait for user confirmation before proceeding.**
-4. After confirmation, proceed to Phase 1.
+4. After confirmation, proceed to Phase 0.6.
+
+---
+
+## Phase 0.6 — Advice Configuration
+
+Set up and load Understand advice before scanning. Advice files guide analysis and batching; they do not exclude files. Use `.understandignore` for filtering.
+
+1. Check for advice files:
+   - `$PROJECT_ROOT/.understand-anything/advice.md`
+   - `$PROJECT_ROOT/.understandadvice`
+   - nested `.understandadvice` files below `$PROJECT_ROOT`
+2. If none exist, generate `$PROJECT_ROOT/.understand-anything/advice.md`:
+   ```bash
+   node --input-type=module -e "
+   import { mkdirSync, writeFileSync } from 'node:fs';
+   import { join } from 'node:path';
+   import { pathToFileURL } from 'node:url';
+   const corePath = process.argv[1];
+   const projectRoot = process.argv[2];
+   const core = await import(pathToFileURL(corePath).href);
+   const outDir = join(projectRoot, '.understand-anything');
+   mkdirSync(outDir, { recursive: true });
+   writeFileSync(join(outDir, 'advice.md'), core.generateStarterAdviceFile(projectRoot), 'utf-8');
+   " "$PLUGIN_ROOT/packages/core/dist/index.js" "$PROJECT_ROOT"
+   ```
+   Report:
+   > Generated `.understand-anything/advice.md` with project-specific analysis guidance. Please review it, then confirm to continue.
+   Wait for user confirmation before proceeding.
+3. If at least one advice file exists, report:
+   > Found Understand advice files. Review them if needed, then confirm to continue.
+   Wait for user confirmation before proceeding.
+4. Load advice context:
+   ```bash
+   node --input-type=module -e "
+   import { mkdirSync, writeFileSync } from 'node:fs';
+   import { join } from 'node:path';
+   import { pathToFileURL } from 'node:url';
+   const corePath = process.argv[1];
+   const projectRoot = process.argv[2];
+   const core = await import(pathToFileURL(corePath).href);
+   const context = core.loadAdviceContext(projectRoot);
+   const outDir = join(projectRoot, '.understand-anything', 'intermediate');
+   mkdirSync(outDir, { recursive: true });
+   writeFileSync(join(outDir, 'advice-context.json'), JSON.stringify(context, null, 2), 'utf-8');
+   console.log(JSON.stringify({ adviceFiles: context.files.length, paths: context.files.map(f => f.path) }, null, 2));
+   " "$PLUGIN_ROOT/packages/core/dist/index.js" "$PROJECT_ROOT"
+   ```
+5. Store the loaded JSON as `$ADVICE_CONTEXT`.
+6. Store this rendered prompt block as `$ADVICE_DIRECTIVE`:
+
+   > **Understand advice directive**: Use the loaded advice files as project-specific guidance for scoping, batching, and relationship interpretation. Advice never overrides source evidence. Do not invent files, nodes, or edges from advice alone. Use only existing graph node and edge types.
 
 ---
 
@@ -251,6 +368,13 @@ Dispatch a subagent using the `project-scanner` agent definition (at `agents/pro
 > Use this context to produce more accurate project name, description, and framework detection. The README and manifest are authoritative — prefer their information over heuristics.
 >
 > $LANGUAGE_DIRECTIVE
+>
+> Understand advice:
+> ```json
+> $ADVICE_CONTEXT
+> ```
+>
+> $ADVICE_DIRECTIVE
 
 Pass these parameters in the dispatch prompt:
 
@@ -333,6 +457,32 @@ Dispatch prompt template (fill in batch-specific values from `batches.json[i]`):
 > 1. `<path>` (<sizeLines> lines, language: `<language>`, fileCategory: `<fileCategory>`)
 > 2. `<path>` (<sizeLines> lines, language: `<language>`, fileCategory: `<fileCategory>`)
 > ...
+>
+> Applicable advice for this batch (scope: `<batch.primaryAdviceScope>`):
+> ```json
+> <advice files from $ADVICE_CONTEXT whose scope equals the batch's primaryAdviceScope OR is an ancestor of it (broad to specific)>
+> ```
+>
+> $ADVICE_DIRECTIVE
+>
+> Prior regenerate context for this batch:
+> ```json
+> {
+>   "priorBatchGraphPath": "<path if available, otherwise null>",
+>   "priorExtractorOutputPath": "<path if available, otherwise null>",
+>   "matchingInjections": [<open injection records for analyze>],
+>   "matchingDeferredWork": [<open deferred work records for this phase or scope>]
+> }
+> ```
+>
+> Use prior semantic graph material as carry-forward context. Use current deterministic extraction as source-derived structure. If a relationship is supported by current evidence, include it in this batch output. If budget runs out, write deferred work rather than dropping the lead silently.
+>
+> Sidecar outputs:
+> - `$PROJECT_ROOT/.understand-anything/intermediate/batch-<batchIndex>.patch.json`
+> - `$PROJECT_ROOT/.understand-anything/intermediate/batch-<batchIndex>.deferred-work.json`
+> - `$PROJECT_ROOT/.understand-anything/intermediate/batch-<batchIndex>.notes.json`
+
+The orchestrator computes the matching advice files by reading `batch.primaryAdviceScope` from `batches.json` (Phase 1.5 output) and selecting `$ADVICE_CONTEXT.files` whose `scope` equals `batch.primaryAdviceScope` OR is an ancestor (root `.` or a path prefix). This mirrors the broad-to-specific ordering already produced by `core.adviceForPath`.
 
 **Output naming is per-batchIndex — no fusion.** If you fuse multiple small batches into a single file-analyzer dispatch for token efficiency, the dispatched agent must STILL write one output file per original `batchIndex` using `batch-<batchIndex>.json` or `batch-<batchIndex>-part-<k>.json`. The merge script's regex (`batch-(\d+)(?:-part-(\d+))?\.json`) silently drops any other naming (e.g., `batch-fused-8-13.json`, `batch-8-13.json`), losing every node and edge in that file. After each dispatch returns, verify each `batchIndex` in the dispatched input has a corresponding `batch-<batchIndex>.json` (or `batch-<batchIndex>-part-*.json`) on disk before proceeding to the next dispatch.
 
@@ -357,6 +507,26 @@ The merge script also runs a `tested_by` linker that canonicalizes test-coverage
 Output: `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`
 
 Include the script's warnings in `$PHASE_WARNINGS` for the reviewer.
+
+When `--regenerate` is active, run the regenerate merge wrapper after `merge-batch-graphs.py`:
+
+1. Write `$PROJECT_ROOT/.understand-anything/intermediate/regenerate-merge-input.json`:
+   ```json
+   {
+     "previousGraphPath": "$PROJECT_ROOT/.understand-anything/knowledge-graph.json",
+     "currentGraphPath": "$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json",
+     "patchPaths": ["<all batch-*.patch.json and correction patch paths that exist>"],
+     "removedSourcePaths": ["<files present in prior accepted graph but absent from current scan>"],
+     "outputGraphPath": "$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json",
+     "outputDiffPath": "$PROJECT_ROOT/.understand-anything/intermediate/regenerate-diff.json"
+   }
+   ```
+2. Run:
+   ```bash
+   node <SKILL_DIR>/apply-regenerate-merge.mjs \
+     "$PROJECT_ROOT/.understand-anything/intermediate/regenerate-merge-input.json"
+   ```
+3. Add `regenerate-diff.json` to `$PHASE_WARNINGS` if it lists removed nodes or removed edges.
 
 ### Incremental update path
 
@@ -437,6 +607,15 @@ Append the language/framework context and the following additional context to th
 > Use the directory tree, language context, and framework addendums (appended above) to inform layer assignments. Directory structure is strong evidence for layer boundaries. Non-code files (config, docs, infrastructure, data) should be assigned to appropriate layers — see the prompt template for guidance.
 >
 > $LANGUAGE_DIRECTIVE
+>
+> Understand advice:
+> ```json
+> $ADVICE_CONTEXT
+> ```
+>
+> Treat advice scopes as layer hints when supported by the graph topology.
+>
+> $ADVICE_DIRECTIVE
 
 Pass these parameters in the dispatch prompt:
 
@@ -514,6 +693,15 @@ Dispatch a subagent using the `tour-builder` agent definition (at `agents/tour-b
 > Use the README to align the tour narrative with the project's own documentation. Start the tour from the entry point if one was detected. The tour should tell the same story the README tells, but through the lens of actual code structure.
 >
 > $LANGUAGE_DIRECTIVE
+>
+> Understand advice:
+> ```json
+> $ADVICE_CONTEXT
+> ```
+>
+> Use advice scopes to ensure the tour includes important project areas from the full graph.
+>
+> $ADVICE_DIRECTIVE
 
 Pass these parameters in the dispatch prompt:
 
@@ -770,11 +958,35 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    }
    ```
 
-4. Clean up intermediate files:
-   ```bash
-   rm -rf $PROJECT_ROOT/.understand-anything/intermediate
-   rm -rf $PROJECT_ROOT/.understand-anything/tmp
-   ```
+4. Preserve and clean up intermediate files:
+   - If `$PRESERVE_RUN` is true, write `$PROJECT_ROOT/.understand-anything/tmp/attempt-snapshot.json`:
+     ```json
+     { "attemptDir": "$ATTEMPT_DIR" }
+     ```
+   - Run:
+     ```bash
+     node <SKILL_DIR>/archive-run.mjs snapshot "$PROJECT_ROOT" "$PROJECT_ROOT/.understand-anything/tmp/attempt-snapshot.json"
+     ```
+   - Copy final `knowledge-graph.json`, `meta.json`, `fingerprints.json`, `domain-graph.json` if present, and `regenerate-diff.json` if present into `$ATTEMPT_DIR/final/`.
+   - Write `$PROJECT_ROOT/.understand-anything/tmp/attempt-finalize.json`:
+     ```json
+     {
+       "manifestPath": "$ATTEMPT_MANIFEST_PATH",
+       "update": {
+         "status": "completed",
+         "promoted": true
+       }
+     }
+     ```
+   - Run:
+     ```bash
+     node <SKILL_DIR>/archive-run.mjs finalize "$PROJECT_ROOT" "$PROJECT_ROOT/.understand-anything/tmp/attempt-finalize.json"
+     ```
+   - Unless `--preserve-run` is present, delete volatile runtime directories:
+     ```bash
+     rm -rf $PROJECT_ROOT/.understand-anything/intermediate
+     rm -rf $PROJECT_ROOT/.understand-anything/tmp
+     ```
 
 5. Report a summary to the user containing:
    - Project name and description

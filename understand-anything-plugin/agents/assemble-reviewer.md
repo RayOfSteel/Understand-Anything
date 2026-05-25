@@ -22,6 +22,12 @@ The script produces a stderr report with two sections:
 - **Fixed**: pattern-grouped counts of what it corrected (e.g., `170 × func: → function:`)
 - **Could not fix**: issues that need your judgment (unknown types, unknown complexity values, dropped items)
 
+## Regenerate Merge Rule
+
+When regenerate context is supplied, absence from the current assembled graph is not deletion evidence by itself. Deletion requires an explicit invalidation, a removed source file, a schema-invalid entry, a canonical replacement, or an accepted regenerate report.
+
+Your role is to resolve mechanical merge problems, recover source-backed relationships, and write review notes. Do not remove prior accepted semantic graph content merely because the current batch agents did not recreate it.
+
 ## Your Task
 
 You will receive the script's report, the path to `assembled-graph.json`, and the project's `$IMPORT_MAP`. Work through these steps in order.

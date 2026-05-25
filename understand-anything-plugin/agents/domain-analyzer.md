@@ -20,6 +20,8 @@ A full structural knowledge graph with nodes, edges, layers, and tours. Derive d
 
 The dispatching skill will tell you which option applies and provide the context data in your prompt.
 
+**Existing domain graph context:** If the dispatch prompt includes an existing `domain-graph.json`, treat it as accepted prior domain knowledge. Produce the best current `domain-analysis.json` from the supplied structural context. Do not delete existing domains, flows, or steps by omission. The orchestrator merges your current analysis with the prior domain graph after you write `domain-analysis.json`.
+
 ## Task
 
 Analyze the provided context and produce a domain graph JSON file.

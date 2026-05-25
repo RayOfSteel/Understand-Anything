@@ -998,6 +998,99 @@ def recover_imports_from_scan(
     return recovered, lines
 
 
+def load_advice_context(project_root: Path) -> dict[str, Any] | None:
+    path = project_root / ".understand-anything" / "intermediate" / "advice-context.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data.get("files"), list):
+        return None
+    return data
+
+
+def advice_files_for_path(context: dict[str, Any], file_path: str) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    normalized = file_path.replace("\\", "/")
+    for item in context.get("files", []):
+        if not isinstance(item, dict):
+            continue
+        scope = item.get("scope")
+        if not isinstance(scope, str) or not scope:
+            continue
+        if scope == "." or normalized == scope or normalized.startswith(f"{scope}/"):
+            matches.append(item)
+
+    def sort_key(item: dict[str, Any]) -> tuple[int, str]:
+        scope = item.get("scope", ".")
+        if scope == ".":
+            return (0, item.get("path", ""))
+        return (len(scope.split("/")), item.get("path", ""))
+
+    return sorted(matches, key=sort_key)
+
+
+def _node_file_path(node: dict[str, Any]) -> str | None:
+    value = node.get("filePath")
+    if isinstance(value, str) and value:
+        return value.replace("\\", "/")
+    node_id = node.get("id")
+    if isinstance(node_id, str) and node_id.startswith("file:"):
+        return node_id[len("file:"):].replace("\\", "/")
+    return None
+
+
+def annotate_advice_provenance(assembled: dict[str, Any], project_root: Path) -> tuple[int, int]:
+    context = load_advice_context(project_root)
+    if context is None:
+        return 0, 0
+
+    primary_scope_by_node_id: dict[str, str] = {}
+    annotated_nodes = 0
+    for node in assembled.get("nodes", []):
+        if not isinstance(node, dict):
+            continue
+        file_path = _node_file_path(node)
+        if not file_path:
+            continue
+        matches = advice_files_for_path(context, file_path)
+        if not matches:
+            continue
+        scopes = [m.get("scope") for m in matches if isinstance(m.get("scope"), str)]
+        paths = [m.get("path") for m in matches if isinstance(m.get("path"), str)]
+        primary_scope = scopes[-1]
+        primary_scope_by_node_id[node.get("id", "")] = primary_scope
+        meta = node.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+            node["meta"] = meta
+        meta["adviceFiles"] = paths
+        meta["adviceScopes"] = scopes
+        meta["primaryAdviceScope"] = primary_scope
+        annotated_nodes += 1
+
+    annotated_edges = 0
+    for edge in assembled.get("edges", []):
+        if not isinstance(edge, dict):
+            continue
+        src_scope = primary_scope_by_node_id.get(edge.get("source", ""))
+        tgt_scope = primary_scope_by_node_id.get(edge.get("target", ""))
+        if not src_scope or not tgt_scope or src_scope == tgt_scope:
+            continue
+        meta = edge.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+            edge["meta"] = meta
+        meta["crossAdviceScope"] = True
+        meta["sourceAdviceScope"] = src_scope
+        meta["targetAdviceScope"] = tgt_scope
+        annotated_edges += 1
+
+    return annotated_nodes, annotated_edges
+
+
 # ── Main ──────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -1146,6 +1239,13 @@ def main() -> None:
         report.append("")
         report.append("Imports edge recovery:")
         report.extend(recovery_report)
+
+    advice_nodes, advice_edges = annotate_advice_provenance(assembled, project_root)
+    if advice_nodes or advice_edges:
+        report.append("")
+        report.append("Advice provenance:")
+        report.append(f"  Annotated {advice_nodes} nodes with advice scope metadata")
+        report.append(f"  Annotated {advice_edges} cross-scope edges")
 
     # Print report
     print("", file=sys.stderr)

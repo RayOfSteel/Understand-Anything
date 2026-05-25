@@ -16,6 +16,12 @@ Extracts business domain knowledge — domains, business flows, and process step
 
 ## Instructions
 
+When `--interactive` is present, use the generic orchestrator checkpoint before Phase 4:
+
+```text
+Next I will ask the domain analyzer to turn the structural graph into domains, flows, and process steps. I have the current structural graph, any existing domain graph, and saved feedback loaded. Any advice for the agent before I start?
+```
+
 ### Phase 0: Resolve `PROJECT_ROOT`
 
 Set `PROJECT_ROOT` to the current working directory.
@@ -123,6 +129,9 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 ### Phase 4: Domain Analysis
 
 1. Read the domain-analyzer agent prompt from `$PLUGIN_ROOT/agents/domain-analyzer.md`
+
+If `$PROJECT_ROOT/.understand-anything/domain-graph.json` exists, include it in the dispatch prompt as accepted prior domain graph context. Tell the agent that omission from the new analysis is not deletion.
+
 2. Dispatch a subagent with the domain-analyzer prompt + the context from Phase 2 or 3
 3. The agent writes its output to `$PROJECT_ROOT/.understand-anything/intermediate/domain-analysis.json`
 
@@ -130,9 +139,23 @@ The preprocessing script does NOT produce a domain graph — it produces **raw m
 
 1. Read the domain analysis output
 2. Validate using the standard graph validation pipeline (the schema now supports domain/flow/step types)
-3. If validation fails, log warnings but save what's valid (error tolerance)
-4. Save to `$PROJECT_ROOT/.understand-anything/domain-graph.json`
-5. Clean up `$PROJECT_ROOT/.understand-anything/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.understand-anything/intermediate/domain-context.json`
+3. If validation fails, log warnings but keep the valid `domain-analysis.json` content for merge input.
+4. Write `$PROJECT_ROOT/.understand-anything/intermediate/domain-merge-input.json`:
+   ```json
+   {
+     "previousDomainGraphPath": "$PROJECT_ROOT/.understand-anything/domain-graph.json",
+     "currentDomainAnalysisPath": "$PROJECT_ROOT/.understand-anything/intermediate/domain-analysis.json",
+     "patchPaths": ["<domain correction patch paths that exist>"],
+     "outputDomainGraphPath": "$PROJECT_ROOT/.understand-anything/domain-graph.json"
+   }
+   ```
+5. Run:
+   ```bash
+   node <SKILL_DIR>/merge-domain-graph.mjs \
+     "$PROJECT_ROOT/.understand-anything/intermediate/domain-merge-input.json"
+   ```
+6. Save the merge report output in the final summary.
+7. Clean up `$PROJECT_ROOT/.understand-anything/intermediate/domain-analysis.json` and `$PROJECT_ROOT/.understand-anything/intermediate/domain-context.json` only after `domain-graph.json` exists.
 
 ### Phase 6: Launch Dashboard
 

@@ -22,6 +22,66 @@ For each file in the batch provided to you, extract structural data via a script
 - `languageNotes` — Write in the specified language when present
 Use natural, native-level phrasing. Keep technical terms in English when no standard translation exists.
 
+**Understand advice:** If the dispatch prompt includes applicable advice files, use them as analysis guidance for this batch. Advice can tell you that XML manifests, SQL metadata rows, native project files, service wrappers, or runtime config strings are important. Advice is not evidence by itself. Every node and edge must still be grounded in files from `batchFiles`, `batchImportData`, or deterministic extraction output.
+
+When creating file-level nodes, include advice provenance if applicable:
+
+```json
+"meta": {
+  "adviceFiles": ["repos/GlobalLine/.understandadvice"],
+  "adviceScopes": ["repos/GlobalLine"]
+}
+```
+
+Do not add `meta.adviceFiles` to function or class nodes unless the prompt explicitly marks the function or class as part of an advised runtime mechanism and the file evidence supports that claim.
+
+**Regenerate context:** If the dispatch prompt includes prior batch graph, prior extractor output, injection records, or deferred work records, treat those as carry-forward context for this batch. Current `extract-structure.mjs` output is the source-derived structural substrate. Prior semantic nodes, summaries, tags, and inferred relationships may be reused when current evidence supports them.
+
+If you can confidently include a missing relationship within this batch's responsibility, include it in the batch graph or batch patch. Do not report it upward instead of doing the work.
+
+When budget or batch scope prevents completion, write deferred work to:
+
+```text
+<project-root>/.understand-anything/intermediate/batch-<batchIndex>.deferred-work.json
+```
+
+Use this shape:
+
+```json
+[
+  {
+    "id": "dw-<batchIndex>-<short-name>",
+    "phase": "analyze",
+    "scope": "batch-<batchIndex>",
+    "kind": "deferred-work",
+    "summary": "<specific remaining relationship family>",
+    "evidencePaths": ["<project-relative path>"],
+    "nextAgentInstruction": "<concrete instruction for a later agent>",
+    "reasonDeferred": "<batch scope or budget reason>",
+    "status": "open"
+  }
+]
+```
+
+When the prompt asks for a patch, write:
+
+```text
+<project-root>/.understand-anything/intermediate/batch-<batchIndex>.patch.json
+```
+
+Use this shape:
+
+```json
+{
+  "version": "1.0.0",
+  "targetGraph": "knowledge",
+  "source": "regenerate",
+  "nodes": [],
+  "edges": [],
+  "invalidations": []
+}
+```
+
 ---
 
 ## Phase 1 -- Structural Extraction (Bundled Script)

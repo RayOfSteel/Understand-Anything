@@ -122,3 +122,60 @@ export {
   type IgnoreFilter,
 } from "./ignore-filter.js";
 export { generateStarterIgnoreFile } from "./ignore-generator.js";
+export {
+  adviceForPath,
+  generateStarterAdviceFile,
+  loadAdviceContext,
+  type AdviceContext,
+  type AdviceFile,
+} from "./advice-loader.js";
+export type {
+  AttemptKind,
+  AttemptManifest,
+  AttemptStatus,
+  ConnectivityCandidate,
+  DeferredWorkRecord,
+  GraphDiffReport,
+  GraphPatch,
+  InjectionRecord,
+  InvalidationRecord,
+  PhaseName,
+  SubstrateFile,
+  SubstrateManifest,
+} from "./regenerate/types.js";
+export {
+  archiveRuntimeDirectories,
+  createAttemptArchive,
+  createAttemptId,
+  finalizeAttemptManifest,
+  writeAttemptJson,
+} from "./regenerate/attempt-archive.js";
+export {
+  buildSubstrateManifest,
+  isSubstrateCacheReusable,
+  type BuildSubstrateOptions,
+  type CacheReuseResult,
+} from "./regenerate/substrate-manifest.js";
+export {
+  applyGraphPatch,
+  edgeKey,
+  mergeGraphWithCarryForward,
+  type MergeGraphOptions,
+} from "./regenerate/graph-merge.js";
+export {
+  compareGraphs,
+  type CompareGraphOptions,
+} from "./regenerate/graph-diff.js";
+export {
+  mergeDomainGraph,
+  type MergeDomainOptions,
+} from "./regenerate/domain-merge.js";
+export {
+  buildConnectivityCandidates,
+  type ConnectivityOptions,
+} from "./regenerate/connectivity.js";
+export {
+  countBasenameReferences,
+  type CountBasenameReferencesOptions,
+  type ReferenceCount,
+} from "./reference-search.js";
