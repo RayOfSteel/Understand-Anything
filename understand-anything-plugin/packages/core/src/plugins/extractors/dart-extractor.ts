@@ -1,6 +1,6 @@
 import type { StructuralAnalysis, CallGraphEntry } from "../../types.js";
 import type { LanguageExtractor, TreeSitterNode } from "./types.js";
-import { findChild, findChildren } from "./base-extractor.js";
+import { findChild, findChildren, getStringValue } from "./base-extractor.js";
 
 /**
  * Whether a Dart name is exported.
@@ -111,6 +111,17 @@ function pushMethod(
   if (isExported(name)) {
     exports.push({ name, lineNumber: declNode.startPosition.row + 1 });
   }
+}
+
+/**
+ * Unwrap the string-literal text from `uri > string_literal` via
+ * `base-extractor.getStringValue` so the quote-stripping logic lives in
+ * exactly one place across all extractors.
+ */
+function uriText(uriNode: TreeSitterNode): string | null {
+  const lit = findChild(uriNode, "string_literal");
+  if (!lit) return null;
+  return getStringValue(lit);
 }
 
 /**
@@ -243,6 +254,9 @@ export class DartExtractor implements LanguageExtractor {
           break;
         case "enum_declaration":
           this.extractEnumDeclaration(node, classes, exports);
+          break;
+        case "import_or_export":
+          this.extractImportOrExport(node, imports, exports);
           break;
       }
     }
@@ -379,6 +393,90 @@ export class DartExtractor implements LanguageExtractor {
     if (isExported(name)) {
       exports.push({ name, lineNumber: declNode.startPosition.row + 1 });
     }
+  }
+
+  private extractImportOrExport(
+    declNode: TreeSitterNode,
+    imports: StructuralAnalysis["imports"],
+    exports: StructuralAnalysis["exports"],
+  ): void {
+    const libImport = findChild(declNode, "library_import");
+    if (libImport) {
+      this.extractLibraryImport(libImport, imports);
+      return;
+    }
+    const libExport = findChild(declNode, "library_export");
+    if (libExport) {
+      this.extractLibraryExport(libExport, declNode, exports);
+    }
+  }
+
+  private extractLibraryImport(
+    libImport: TreeSitterNode,
+    imports: StructuralAnalysis["imports"],
+  ): void {
+    const spec = findChild(libImport, "import_specification");
+    if (!spec) return;
+
+    const configurable = findChild(spec, "configurable_uri");
+    const uri = configurable ? findChild(configurable, "uri") : null;
+    if (!uri) return;
+    const source = uriText(uri);
+    if (!source) return;
+
+    const specifiers: string[] = [];
+
+    // Combinators come in two flavours:
+    //   show Bar, Baz  → leading keyword "show", names are specifiers
+    //   hide Qux       → leading keyword "hide", names are excluded — skip
+    const combinators = findChildren(spec, "combinator");
+    for (const c of combinators) {
+      // Inspect the first child to determine show vs hide. The keyword is an
+      // unnamed token; use `child()` not `namedChild()`.
+      const first = c.child(0);
+      if (first && first.type === "hide") continue;
+      for (const id of findChildren(c, "identifier")) {
+        specifiers.push(id.text);
+      }
+    }
+
+    // `as Foo` → direct `identifier` child of import_specification.
+    // Only treat as alias when there were no `show`/`hide` specifiers.
+    const asId = findChild(spec, "identifier");
+    if (asId && specifiers.length === 0) {
+      specifiers.push(asId.text);
+    }
+
+    imports.push({
+      source,
+      specifiers,
+      lineNumber: libImport.startPosition.row + 1,
+    });
+  }
+
+  /**
+   * Extract an `export` directive's URI into `exports[]`.
+   *
+   * Takes both `libExport` (the `library_export` node containing the URI)
+   * and `outerNode` (the wrapping `import_or_export` node). The line number
+   * uses `outerNode.startPosition` because `library_export` may start one
+   * child deeper than the `export` keyword, while `import_or_export` is
+   * guaranteed to start at the keyword.
+   */
+  private extractLibraryExport(
+    libExport: TreeSitterNode,
+    outerNode: TreeSitterNode,
+    exports: StructuralAnalysis["exports"],
+  ): void {
+    const configurable = findChild(libExport, "configurable_uri");
+    const uri = configurable ? findChild(configurable, "uri") : null;
+    if (!uri) return;
+    const source = uriText(uri);
+    if (!source) return;
+    exports.push({
+      name: source,
+      lineNumber: outerNode.startPosition.row + 1,
+    });
   }
 
   extractCallGraph(rootNode: TreeSitterNode): CallGraphEntry[] {

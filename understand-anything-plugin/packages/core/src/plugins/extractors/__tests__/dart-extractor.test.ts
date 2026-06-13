@@ -263,4 +263,68 @@ describe("DartExtractor", () => {
       parser.delete();
     });
   });
+
+  describe("extractStructure - imports", () => {
+    it("extracts a package import with no specifiers", () => {
+      const { tree, parser, root } = parse(`import 'package:flutter/material.dart';\n`);
+      const result = extractor.extractStructure(root);
+
+      expect(result.imports).toHaveLength(1);
+      expect(result.imports[0].source).toBe("package:flutter/material.dart");
+      expect(result.imports[0].specifiers).toEqual([]);
+      tree.delete();
+      parser.delete();
+    });
+
+    it("extracts a relative import", () => {
+      const { tree, parser, root } = parse(`import './foo.dart';\n`);
+      const result = extractor.extractStructure(root);
+
+      expect(result.imports[0].source).toBe("./foo.dart");
+      tree.delete();
+      parser.delete();
+    });
+
+    it("extracts a `show` clause as specifiers", () => {
+      const { tree, parser, root } = parse(`import 'foo.dart' show Bar, Baz;\n`);
+      const result = extractor.extractStructure(root);
+
+      expect(result.imports[0].source).toBe("foo.dart");
+      expect(result.imports[0].specifiers).toEqual(["Bar", "Baz"]);
+      tree.delete();
+      parser.delete();
+    });
+
+    it("extracts an `as` prefix as the sole specifier", () => {
+      const { tree, parser, root } = parse(`import 'bar.dart' as b;\n`);
+      const result = extractor.extractStructure(root);
+
+      expect(result.imports[0].source).toBe("bar.dart");
+      expect(result.imports[0].specifiers).toEqual(["b"]);
+      tree.delete();
+      parser.delete();
+    });
+
+    it("does NOT include `hide` names as specifiers", () => {
+      const { tree, parser, root } = parse(`import 'foo.dart' hide Qux;\n`);
+      const result = extractor.extractStructure(root);
+
+      expect(result.imports[0].source).toBe("foo.dart");
+      expect(result.imports[0].specifiers).toEqual([]);
+      tree.delete();
+      parser.delete();
+    });
+  });
+
+  describe("extractStructure - exports", () => {
+    it("extracts a top-level export directive", () => {
+      const { tree, parser, root } = parse(`export 'shared.dart';\n`);
+      const result = extractor.extractStructure(root);
+
+      const sharedExport = result.exports.find((e) => e.name === "shared.dart");
+      expect(sharedExport).toBeDefined();
+      tree.delete();
+      parser.delete();
+    });
+  });
 });
