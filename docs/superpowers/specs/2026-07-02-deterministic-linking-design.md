@@ -47,7 +47,7 @@ Abhängigkeiten: ③ setzt ② voraus (Linker-Kanten brauchen Provenance ab dem 
 ## 4. Offene Weggabelungen (je zu Beginn der betroffenen Phase zu entscheiden)
 
 1. **Regelformat für Linker** (Phase ③): deklarative JSON-Regeln mit generischer Engine vs. TypeScript-Code-Linker vs. Hybrid. Tendenz aus der Diskussion: deklarativ mit engine-interner Linker-Schnittstelle als Escape-Hatch — **nicht final entschieden**.
-2. **Fork vs. Upstream-Contribution** (vor erstem Code): bestimmt Konventions- und Teststrenge. Understand-Anything ist ein fremdes Open-Source-Projekt.
+2. **Fork vs. Upstream-Contribution** — **entschieden (2026-07-02): Fork.** Entwicklung auf dem eigenen Branch (`myMaster`); bestehende Konventionen (TypeScript strict, Vitest, ESM) werden beibehalten, weil sie der Wartbarkeit dienen, nicht wegen Upstream-Kompatibilität. Eine spätere Upstream-Contribution einzelner Phasen bleibt möglich, ist aber kein Gestaltungsziel.
 3. **Ablageort projektspezifischer Regeln** (Phase ③/④): im Plugin ausgeliefert vs. `.understand-anything/rules/` im Ziel-Repo. Sicherheitsrelevant, falls Regeln Code enthalten dürften.
 4. **Formalisierung des vorhandenen Ad-hoc-Patch-Formats** (Phase ②): In Nutzer-Repos existieren bereits handgeschriebene `.understand-anything/patches/*.patch.json` (`edges_to_add`/`edges_to_remove` + `_meta.rationale`) — Kandidat für das offizielle Patch-/Provenance-Format.
 
