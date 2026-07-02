@@ -214,7 +214,7 @@ Expected: Build ohne Fehler.
 
 - [ ] **Step 2: Failing Tests schreiben**
 
-Im bestehenden Block `describe('extract-import-map.mjs — C# resolver', …)` (Zeile 869): den vorhandenen Test **behalten** (er prüft jetzt den Typ-FQN-Fallback), Titel ändern auf `'resolves type-FQN usings (using N.T) to the declaring file'`. Dahinter drei neue Tests einfügen:
+Im bestehenden Block `describe('extract-import-map.mjs — C# resolver', …)` (Zeile 869): den vorhandenen Test **behalten** (er prüft jetzt den Typ-FQN-Fallback), Titel ändern auf `'resolves type-FQN usings (using N.T) to the declaring file'`. Dahinter fünf neue Tests einfügen:
 
 ```js
   it('resolves namespace usings via declared-namespace index, gated by type reference', () => {
@@ -332,7 +332,7 @@ Im bestehenden Block `describe('extract-import-map.mjs — C# resolver', …)` (
 - [ ] **Step 3: Tests laufen lassen — neue müssen fehlschlagen**
 
 Run: `pnpm exec vitest run tests/skill/understand/test_extract_import_map.test.mjs -t "C# resolver"`
-Expected: Der Typ-FQN-Test besteht (alter Mechanismus trifft zufällig), die drei neuen Tests FAIL (leere importMap-Einträge).
+Expected: Der Typ-FQN-Test besteht (alter Mechanismus trifft zufällig), die fünf neuen Tests FAIL (bzw. der Kommentar-Limit-Test kann je nach altem Verhalten zufällig bestehen — maßgeblich ist Step 5) (leere importMap-Einträge).
 
 - [ ] **Step 4: Resolver implementieren**
 
@@ -498,7 +498,7 @@ In der Datei-Schleife, direkt nach dem Ruby-Branch (`if (file.language === 'ruby
 - [ ] **Step 5: Tests laufen lassen — müssen bestehen**
 
 Run: `pnpm exec vitest run tests/skill/understand/test_extract_import_map.test.mjs -t "C# resolver"`
-Expected: PASS (Typ-FQN-Regression + 3 neue).
+Expected: PASS (Typ-FQN-Regression + 5 neue).
 
 - [ ] **Step 6: Gesamte Import-Map-Suite als Regression**
 
