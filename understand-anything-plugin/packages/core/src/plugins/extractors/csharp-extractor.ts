@@ -131,10 +131,11 @@ export class CSharpExtractor implements LanguageExtractor {
     const classes: StructuralAnalysis["classes"] = [];
     const imports: StructuralAnalysis["imports"] = [];
     const exports: StructuralAnalysis["exports"] = [];
+    const namespaces: string[] = [];
 
-    this.walkTopLevel(rootNode, functions, classes, imports, exports);
+    this.walkTopLevel(rootNode, functions, classes, imports, exports, namespaces);
 
-    return { functions, classes, imports, exports };
+    return { functions, classes, imports, exports, namespaces: [...new Set(namespaces)] };
   }
 
   extractCallGraph(rootNode: TreeSitterNode): CallGraphEntry[] {
@@ -203,6 +204,20 @@ export class CSharpExtractor implements LanguageExtractor {
   // ---- Private helpers ----
 
   /**
+   * Extract the dotted name of a namespace_declaration or
+   * file_scoped_namespace_declaration. The grammar exposes it as the `name`
+   * field (qualified_name or identifier); fall back to child scan for
+   * grammar-version robustness.
+   */
+  private namespaceName(node: TreeSitterNode): string | null {
+    const nameNode =
+      node.childForFieldName("name") ??
+      findChild(node, "qualified_name") ??
+      findChild(node, "identifier");
+    return nameNode ? nameNode.text : null;
+  }
+
+  /**
    * Walk the top-level nodes of a compilation_unit, recursing into
    * namespace bodies to find declarations.
    */
@@ -212,6 +227,7 @@ export class CSharpExtractor implements LanguageExtractor {
     classes: StructuralAnalysis["classes"],
     imports: StructuralAnalysis["imports"],
     exports: StructuralAnalysis["exports"],
+    namespaces: string[],
   ): void {
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
@@ -222,15 +238,20 @@ export class CSharpExtractor implements LanguageExtractor {
           this.extractUsing(child, imports);
           break;
 
-        case "namespace_declaration":
-          // Recurse into namespace body (declaration_list)
-          this.walkNamespaceBody(child, functions, classes, imports, exports);
+        case "namespace_declaration": {
+          const ns = this.namespaceName(child);
+          if (ns) namespaces.push(ns);
+          this.walkNamespaceBody(child, functions, classes, imports, exports, namespaces, ns ?? "");
           break;
+        }
 
-        case "file_scoped_namespace_declaration":
+        case "file_scoped_namespace_declaration": {
           // File-scoped namespace: declarations are siblings at the root,
-          // not children of this node. Nothing to recurse into.
+          // not children of this node. Record the name only.
+          const ns = this.namespaceName(child);
+          if (ns) namespaces.push(ns);
           break;
+        }
 
         case "class_declaration":
           this.extractClass(child, functions, classes, exports);
@@ -253,6 +274,8 @@ export class CSharpExtractor implements LanguageExtractor {
     classes: StructuralAnalysis["classes"],
     imports: StructuralAnalysis["imports"],
     exports: StructuralAnalysis["exports"],
+    namespaces: string[],
+    parentNs: string,
   ): void {
     const body = nsNode.childForFieldName("body");
     if (!body) return;
@@ -270,10 +293,13 @@ export class CSharpExtractor implements LanguageExtractor {
           this.extractInterface(child, functions, classes, exports);
           break;
 
-        case "namespace_declaration":
-          // Nested namespaces
-          this.walkNamespaceBody(child, functions, classes, imports, exports);
+        case "namespace_declaration": {
+          const ns = this.namespaceName(child);
+          const full = ns ? (parentNs ? `${parentNs}.${ns}` : ns) : parentNs;
+          if (ns) namespaces.push(full);
+          this.walkNamespaceBody(child, functions, classes, imports, exports, namespaces, full);
           break;
+        }
       }
     }
   }

@@ -171,6 +171,8 @@ export interface StructuralAnalysis {
   classes: Array<{ name: string; lineRange: [number, number]; methods: string[]; properties: string[] }>;
   imports: Array<{ source: string; specifiers: string[]; lineNumber: number }>;
   exports: Array<{ name: string; lineNumber: number; isDefault?: boolean }>;
+  // Declared namespaces (C#; dotted for nested). Optional for backward compat.
+  namespaces?: string[];
   // Non-code structural data (all optional for backward compat)
   sections?: SectionInfo[];
   definitions?: DefinitionInfo[];

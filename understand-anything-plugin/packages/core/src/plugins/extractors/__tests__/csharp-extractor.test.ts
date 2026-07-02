@@ -548,6 +548,65 @@ public class Svc {
     });
   });
 
+  // ---- Namespaces ----
+
+  describe("extractStructure - namespaces", () => {
+    it("records a block-scoped namespace", () => {
+      const { tree, parser, root } = parse(`namespace MyApp.Views {
+    public class CustomerView { }
+}
+`);
+      const result = extractor.extractStructure(root);
+      expect(result.namespaces).toEqual(["MyApp.Views"]);
+      tree.delete();
+      parser.delete();
+    });
+
+    it("records a file-scoped namespace", () => {
+      const { tree, parser, root } = parse(`namespace MyApp.Services;
+
+public class UserService { }
+`);
+      const result = extractor.extractStructure(root);
+      expect(result.namespaces).toEqual(["MyApp.Services"]);
+      tree.delete();
+      parser.delete();
+    });
+
+    it("records nested namespaces as dotted paths", () => {
+      const { tree, parser, root } = parse(`namespace A {
+    namespace B {
+        public class C { }
+    }
+}
+`);
+      const result = extractor.extractStructure(root);
+      expect(result.namespaces).toEqual(["A", "A.B"]);
+      tree.delete();
+      parser.delete();
+    });
+
+    it("records multiple top-level namespaces deduplicated", () => {
+      const { tree, parser, root } = parse(`namespace First { public class A { } }
+namespace Second { public class B { } }
+namespace First { public class C { } }
+`);
+      const result = extractor.extractStructure(root);
+      expect(result.namespaces).toEqual(["First", "Second"]);
+      tree.delete();
+      parser.delete();
+    });
+
+    it("returns an empty array when no namespace is declared", () => {
+      const { tree, parser, root } = parse(`public class Global { }
+`);
+      const result = extractor.extractStructure(root);
+      expect(result.namespaces).toEqual([]);
+      tree.delete();
+      parser.delete();
+    });
+  });
+
   // ---- Comprehensive ----
 
   describe("comprehensive C# file", () => {
