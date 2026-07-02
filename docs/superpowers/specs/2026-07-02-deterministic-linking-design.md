@@ -89,6 +89,8 @@ C#-Auflösung wird zweiphasig:
 - Regressionslauf der bestehenden Import-Map-Tests (andere Sprachen unberührt).
 - Integrationsmaß: erneuter Scan von MachineSIC → erwartet ≈ 418 `imports`-Kanten (± Simulationstoleranz), Stichprobe von 10 zufälligen Kanten manuell gegen Quelltext geprüft.
 
+**Messergebnis (2026-07-02):** MachineSIC-Lauf: totalEdges=418 (Simulation: ≈418), filesWithImports=99/147 C#-Dateien. Stichprobe 11 Kanten (deterministisch, jede 41.): 11/11 korrekt — jede Quelldatei referenziert einen in der Zieldatei deklarierten Typ per `using`-Direktive (8×) oder Same-Namespace (3×), jeweils mit echter Typnutzung im Code. Auffälligkeiten: keine Falsch-Positiven in der Stichprobe; bei einer Kante (`IModuleSettingsResolver.cs → SettingValue.cs`) taucht der Typname zusätzlich in einem XML-Doc-Kommentar auf, die Kante ist aber durch reale Code-Nutzung gedeckt — die bekannte v1-Grenze „Text-Matching trifft auch Kommentare/Strings" (§5.3) blieb in der Stichprobe folgenlos.
+
 ### 5.5 Nicht-Ziele von Phase ①
 
 XAML/Razor/DI-Verbindungen (Phase ③), Provenance (Phase ②), `global using`-Projektsemantik, `using static`-Präzision, Grammar-Authoring.
