@@ -383,10 +383,9 @@ async function buildResolutionContext(projectRoot, files) {
   }
 
   // Build per-extension suffix indices for dotted-FQN resolvers (Java,
-  // Kotlin, C#). Indexed once; reused for every import dispatch.
+  // Kotlin). Indexed once; reused for every import dispatch.
   const javaIndex = buildSuffixIndex(files, p => p.endsWith('.java'));
   const kotlinIndex = buildSuffixIndex(files, p => p.endsWith('.kt'));
-  const csIndex = buildSuffixIndex(files, p => p.endsWith('.cs'));
 
   return {
     projectRoot,
@@ -396,7 +395,6 @@ async function buildResolutionContext(projectRoot, files) {
     goFilesByDir,
     javaIndex,
     kotlinIndex,
-    csIndex,
     phpAutoloads,
     // Dedupe Sets for one-time-per-file warnings. Keyed by importer file
     // path. Mutated by resolvers.
@@ -965,16 +963,128 @@ export function resolveKotlinImport(rawImport, _file, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-// C# resolver
+// C# resolver (namespace-index based)
 //
-// C# `using Foo.Bar;` declarations are typically NAMESPACES, not files, and
-// the C# convention is namespace = directory (loose). Tree-sitter's C#
-// extractor captures these as imports with the dotted source. We probe the
-// dotted path against the .cs index the same way Java/Kotlin do.
+// C# `using X` names a NAMESPACE, and files are named after TYPES, so the
+// dotted-path probe used for Java/Kotlin essentially always misses in real
+// .NET solutions (namespace != file path). Instead:
+//   Pass 1 (buildCsNamespaceContext): analyze every .cs file once and index
+//     which files declare which namespaces and which type names each file
+//     declares.
+//   Pass 2 (resolveCSharpFileImports): `using X` candidates are the files
+//     declaring namespace X; an edge is added only when the importing file's
+//     source references one of the candidate's type names (word-boundary
+//     match). `using N.T` (type-FQN / using-static / alias target) where T
+//     is a type declared in namespace N resolves to T's file directly.
+//     Files sharing a namespace need no `using` in C#, so the same
+//     type-reference gate runs against same-namespace siblings too.
+//
+// Known v1 limits (see docs/superpowers/specs/2026-07-02-deterministic-
+// linking-design.md §5.3): global usings act as imports of their own file
+// only; type references inside comments/strings count as matches.
 // ---------------------------------------------------------------------------
 
-export function resolveCSharpImport(rawImport, _file, ctx) {
-  return resolveDottedFqn(rawImport, '.cs', ctx.csIndex);
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function referencesType(content, typeName) {
+  if (!typeName) return false;
+  return new RegExp(`\\b${escapeRegex(typeName)}\\b`).test(content);
+}
+
+/**
+ * Pre-pass over all C# code files. Returns
+ *   csAnalyses:       Map<posixPath, { analysis, content }>
+ *   csNamespaceIndex: Map<namespace, Array<{ path, types: string[] }>>
+ * Read/analyze failures are warned and skipped; the main loop then yields
+ * importMap[path] = [] for those files.
+ */
+async function buildCsNamespaceContext(projectRoot, files, registry) {
+  const csAnalyses = new Map();
+  const csNamespaceIndex = new Map();
+  const csFiles = files.filter(
+    (f) => f.fileCategory === 'code' && f.language === 'csharp',
+  );
+  if (csFiles.length === 0) return { csAnalyses, csNamespaceIndex };
+
+  const reads = await readFilesParallel(
+    csFiles.map((f) => ({ key: toPosix(f.path), absPath: join(projectRoot, f.path) })),
+  );
+  for (const { key, raw, err } of reads) {
+    if (err) {
+      process.stderr.write(
+        `Warning: extract-import-map: C# pre-pass read failed for ${key} (${err.message})\n`,
+      );
+      continue;
+    }
+    let analysis;
+    try {
+      analysis = registry.analyzeFile(key, raw);
+    } catch (e) {
+      process.stderr.write(
+        `Warning: extract-import-map: C# pre-pass analyze failed for ${key} (${e.message})\n`,
+      );
+      continue;
+    }
+    csAnalyses.set(key, { analysis, content: raw });
+    const types = (analysis?.classes ?? []).map((c) => c.name);
+    for (const ns of analysis?.namespaces ?? []) {
+      if (!csNamespaceIndex.has(ns)) csNamespaceIndex.set(ns, []);
+      csNamespaceIndex.get(ns).push({ path: key, types });
+    }
+  }
+  for (const arr of csNamespaceIndex.values()) {
+    arr.sort((a, b) => a.path.localeCompare(b.path));
+  }
+  return { csAnalyses, csNamespaceIndex };
+}
+
+/**
+ * Resolve all project-internal dependencies of one C# file. Returns a Set
+ * of posix paths (importer excluded).
+ */
+function resolveCSharpFileImports(path, analysis, content, csCtx) {
+  const out = new Set();
+  const { csNamespaceIndex } = csCtx;
+
+  const addIfReferenced = (candidate) => {
+    if (candidate.path === path || out.has(candidate.path)) return;
+    for (const t of candidate.types) {
+      if (referencesType(content, t)) {
+        out.add(candidate.path);
+        return;
+      }
+    }
+  };
+
+  for (const imp of analysis?.imports ?? []) {
+    const u = (imp.source ?? '').replace(/\.\*$/, '');
+    if (!u) continue;
+
+    const nsCandidates = csNamespaceIndex.get(u);
+    if (nsCandidates) {
+      for (const c of nsCandidates) addIfReferenced(c);
+      continue;
+    }
+
+    // Type-FQN fallback: `using N.T` where T is a type declared in N.
+    const lastDot = u.lastIndexOf('.');
+    if (lastDot > 0) {
+      const nsPart = u.slice(0, lastDot);
+      const typePart = u.slice(lastDot + 1);
+      for (const c of csNamespaceIndex.get(nsPart) ?? []) {
+        if (c.path !== path && c.types.includes(typePart)) out.add(c.path);
+      }
+    }
+  }
+
+  // Same-namespace siblings need no `using` in C#.
+  for (const ns of analysis?.namespaces ?? []) {
+    for (const c of csNamespaceIndex.get(ns) ?? []) addIfReferenced(c);
+  }
+
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -1436,9 +1546,6 @@ function resolveImport(imp, file, ctx) {
   if (lang === 'kotlin') {
     return resolveKotlinImport(src, file, ctx);
   }
-  if (lang === 'csharp') {
-    return resolveCSharpImport(src, file, ctx);
-  }
   if (lang === 'php') {
     return resolvePhpImport(src, file, ctx);
   }
@@ -1524,6 +1631,11 @@ async function main() {
   // `buildResolutionContext`.
   const ctx = await buildResolutionContext(projectRoot, files);
 
+  // C# pre-pass: namespace/type index (needs tree-sitter).
+  const csCtx = treeSitterReady
+    ? await buildCsNamespaceContext(projectRoot, files, registry)
+    : { csAnalyses: new Map(), csNamespaceIndex: new Map() };
+
   const importMap = {};
   let filesWithImports = 0;
   let totalEdges = 0;
@@ -1573,6 +1685,13 @@ async function main() {
         for (const imp of parseRubyImports(content)) {
           for (const out of resolveRubyImport(imp, file, ctx)) {
             if (out && ctx.fileSet.has(out)) resolvedSet.add(out);
+          }
+        }
+      } else if (file.language === 'csharp') {
+        const cached = csCtx.csAnalyses.get(path);
+        if (cached) {
+          for (const out of resolveCSharpFileImports(path, cached.analysis, cached.content, csCtx)) {
+            if (ctx.fileSet.has(out)) resolvedSet.add(out);
           }
         }
       } else {

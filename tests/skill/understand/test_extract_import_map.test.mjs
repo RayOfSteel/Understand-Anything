@@ -876,7 +876,7 @@ describe('extract-import-map.mjs — C# resolver', () => {
     }
   });
 
-  it('resolves c# using directives via dotted-suffix probe', () => {
+  it('resolves type-FQN usings (using N.T) to the declaring file', () => {
     projectRoot = setupTree({
       'Program.cs':
         `using System;\nusing MyApp.Util.Helper;\nusing MyApp.Models.User;\n\nnamespace MyApp { class Program { } }\n`,
@@ -900,6 +900,117 @@ describe('extract-import-map.mjs — C# resolver', () => {
       'MyApp/Models/User.cs',
       'MyApp/Util/Helper.cs',
     ]);
+  });
+
+  it('resolves namespace usings via declared-namespace index, gated by type reference', () => {
+    projectRoot = setupTree({
+      'App/Program.cs':
+        `using MyApp.Services;\n\nnamespace MyApp.App {\n  class Program { void Run() { var s = new UserService(); } }\n}\n`,
+      'Services/UserService.cs':
+        `namespace MyApp.Services { public class UserService { } }\n`,
+      'Services/MailService.cs':
+        `namespace MyApp.Services { public class MailService { } }\n`,
+    });
+
+    const result = runScript(projectRoot, {
+      projectRoot,
+      files: [
+        { path: 'App/Program.cs', language: 'csharp', fileCategory: 'code' },
+        { path: 'Services/UserService.cs', language: 'csharp', fileCategory: 'code' },
+        { path: 'Services/MailService.cs', language: 'csharp', fileCategory: 'code' },
+      ],
+    });
+
+    expect(result.status).toBe(0);
+    // UserService wird referenziert -> Kante; MailService nicht -> keine Kante
+    expect(result.output.importMap['App/Program.cs']).toEqual(['Services/UserService.cs']);
+  });
+
+  it('resolves same-namespace references without any using directive', () => {
+    projectRoot = setupTree({
+      'Commands/MoveCommand.cs':
+        `namespace App.Commands {\n  internal sealed class MoveCommand : MoveCommandBase { }\n}\n`,
+      'Commands/MoveCommandBase.cs':
+        `namespace App.Commands {\n  internal abstract class MoveCommandBase { }\n}\n`,
+    });
+
+    const result = runScript(projectRoot, {
+      projectRoot,
+      files: [
+        { path: 'Commands/MoveCommand.cs', language: 'csharp', fileCategory: 'code' },
+        { path: 'Commands/MoveCommandBase.cs', language: 'csharp', fileCategory: 'code' },
+      ],
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.output.importMap['Commands/MoveCommand.cs']).toEqual(['Commands/MoveCommandBase.cs']);
+    // Keine Rückkante: die Basisklasse referenziert MoveCommand nicht
+    expect(result.output.importMap['Commands/MoveCommandBase.cs']).toEqual([]);
+  });
+
+  it('resolves alias usings via their target (using Foo = N.T)', () => {
+    projectRoot = setupTree({
+      'App/Program.cs':
+        `using Svc = MyApp.Services.UserService;\n\nnamespace MyApp.App {\n  class Program { void Run() { Svc s = null; } }\n}\n`,
+      'Services/UserService.cs':
+        `namespace MyApp.Services { public class UserService { } }\n`,
+    });
+
+    const result = runScript(projectRoot, {
+      projectRoot,
+      files: [
+        { path: 'App/Program.cs', language: 'csharp', fileCategory: 'code' },
+        { path: 'Services/UserService.cs', language: 'csharp', fileCategory: 'code' },
+      ],
+    });
+
+    expect(result.status).toBe(0);
+    // Der Extractor liefert das Alias-Ziel (MyApp.Services.UserService) als
+    // Import-Source; der Typ-FQN-Fallback loest es auf.
+    expect(result.output.importMap['App/Program.cs']).toEqual(['Services/UserService.cs']);
+  });
+
+  it('documents the v1 limit: a type name inside a comment counts as a reference', () => {
+    projectRoot = setupTree({
+      'App/Program.cs':
+        `using MyApp.Services;\n\nnamespace MyApp.App {\n  // TODO: later use MailService here\n  class Program { }\n}\n`,
+      'Services/MailService.cs':
+        `namespace MyApp.Services { public class MailService { } }\n`,
+    });
+
+    const result = runScript(projectRoot, {
+      projectRoot,
+      files: [
+        { path: 'App/Program.cs', language: 'csharp', fileCategory: 'code' },
+        { path: 'Services/MailService.cs', language: 'csharp', fileCategory: 'code' },
+      ],
+    });
+
+    expect(result.status).toBe(0);
+    // Bewusste v1-Grenze (Spec §5.3): Wortgrenzen-Match ueber den gesamten
+    // Quelltext, Kommentare eingeschlossen. Bei Verschaerfung auf
+    // Syntaxbaum-Identifier kippt die Erwartung auf [].
+    expect(result.output.importMap['App/Program.cs']).toEqual(['Services/MailService.cs']);
+  });
+
+  it('resolves usings against file-scoped namespaces', () => {
+    projectRoot = setupTree({
+      'App/Program.cs':
+        `using MyApp.Services;\n\nnamespace MyApp.App;\n\nclass Program { void Run() { var s = new UserService(); } }\n`,
+      'Services/UserService.cs':
+        `namespace MyApp.Services;\n\npublic class UserService { }\n`,
+    });
+
+    const result = runScript(projectRoot, {
+      projectRoot,
+      files: [
+        { path: 'App/Program.cs', language: 'csharp', fileCategory: 'code' },
+        { path: 'Services/UserService.cs', language: 'csharp', fileCategory: 'code' },
+      ],
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.output.importMap['App/Program.cs']).toEqual(['Services/UserService.cs']);
   });
 });
 
