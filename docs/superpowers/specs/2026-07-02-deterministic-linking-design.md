@@ -82,6 +82,7 @@ C#-Auflösung wird zweiphasig:
 - `using static A.B.C` wird wie `using A.B` behandelt.
 - Typ-Referenz-Filter matcht auch Vorkommen in Kommentaren/Strings (falsch-positive Kanten möglich). Folgeverbesserung: Identifier aus dem Syntaxbaum statt Textsuche.
 - Aliase (`using Foo = A.B.C;`) funktionieren über die bestehende Alias-Zielextraktion des Extractors.
+- Dateien, die ausschließlich `struct`/`record`/`enum`/`delegate` deklarieren, können nicht als Kantenziel aufgelöst werden — der Namespace-Index speist sich nur aus den `class`- und `interface`-Deklarationen des Extractors (fehlende, nie falsche Kanten). Folgeverbesserung: mechanische Extractor-Erweiterung um die weiteren Deklarations-Cases.
 
 ### 5.4 Verifikation
 

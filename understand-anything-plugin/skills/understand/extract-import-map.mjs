@@ -981,7 +981,10 @@ export function resolveKotlinImport(rawImport, _file, ctx) {
 //
 // Known v1 limits (see docs/superpowers/specs/2026-07-02-deterministic-
 // linking-design.md §5.3): global usings act as imports of their own file
-// only; type references inside comments/strings count as matches.
+// only; type references inside comments/strings count as matches; files
+// declaring only structs/records/enums/delegates contribute no types to the
+// index (the extractor records class/interface declarations only) and so
+// cannot be edge targets.
 // ---------------------------------------------------------------------------
 
 function escapeRegex(s) {
