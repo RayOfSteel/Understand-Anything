@@ -1,7 +1,7 @@
 # Design: Deterministische Verbindungsschicht für Understand-Anything
 
 **Datum:** 2026-07-02
-**Status:** Phase ① umgesetzt und gemessen; Phase ② detailliert und freigegeben (2026-07-03)
+**Status:** Phase ① umgesetzt und gemessen; Phase ② umgesetzt und gemessen (2026-07-03); Phase ③ detailliert und freigegeben (2026-07-03)
 **Prüfstein:** MachineSIC-Graph (`MachineSIC/.understand-anything/knowledge-graph.json`, 208 Dateien, 626 Nodes, 920 Edges)
 
 ## 1. Kontext und Motivation
@@ -46,9 +46,9 @@ Abhängigkeiten: ③ setzt ② voraus (Linker-Kanten brauchen Provenance ab dem 
 
 ## 4. Offene Weggabelungen (je zu Beginn der betroffenen Phase zu entscheiden)
 
-1. **Regelformat für Linker** (Phase ③): deklarative JSON-Regeln mit generischer Engine vs. TypeScript-Code-Linker vs. Hybrid. Tendenz aus der Diskussion: deklarativ mit engine-interner Linker-Schnittstelle als Escape-Hatch — **nicht final entschieden**.
+1. **Regelformat für Linker** (Phase ③) — **entschieden (2026-07-03): deklarative JSON-Regeln mit Tree-Sitter-Queries als Matching-Primitiv, engine-interne `builtin:`-Fakten-Provider als Escape-Hatch.** Regeln sind reine Daten (Queries + Join-Deklaration, kein ausführbarer Code); was eine Query nicht ausdrücken kann (abgeleitete/aufgelöste Werte wie FQNs), liefert ein im Plugin implementierter Provider. Details in §8.1/§8.2. Damit maximiert Phase ③ zugleich die Tree-Sitter-Nutzung der Pipeline — die Regel-Mechanik läuft über Queries auf bestehenden Grammatiken, nicht über Regex oder handgeschriebene Einzelfall-Extraktoren.
 2. **Fork vs. Upstream-Contribution** — **entschieden (2026-07-02): Fork.** Entwicklung auf dem eigenen Branch (`myMaster`); bestehende Konventionen (TypeScript strict, Vitest, ESM) werden beibehalten, weil sie der Wartbarkeit dienen, nicht wegen Upstream-Kompatibilität. Eine spätere Upstream-Contribution einzelner Phasen bleibt möglich, ist aber kein Gestaltungsziel.
-3. **Ablageort projektspezifischer Regeln** (Phase ③/④): im Plugin ausgeliefert vs. `.understand-anything/rules/` im Ziel-Repo. Sicherheitsrelevant, falls Regeln Code enthalten dürften.
+3. **Ablageort projektspezifischer Regeln** (Phase ③/④) — **entschieden (2026-07-03): beides, additiv.** Framework-Packs werden im Plugin ausgeliefert (`understand-anything-plugin/rules/*.json`); zusätzlich lädt die Engine `.understand-anything/rules/*.json` aus dem Ziel-Repo. Das Sicherheitsargument ist durch die Format-Entscheidung (Weggabelung 1) entschärft: Regeln sind reine Daten — eine bösartige oder defekte Regel kann schlimmstenfalls nichts matchen, falsche Kanten behaupten oder die Analyse verlangsamen, aber keinen Code ausführen. Phase ④ schreibt Regelvorschläge in das projektlokale Verzeichnis, Phase ⑤ schärft sie dort.
 4. **Formalisierung des vorhandenen Ad-hoc-Patch-Formats** — **entschieden (2026-07-03): formalisieren + maschinell anwenden.** Das Ad-hoc-Format wird als offizielles Einzelfall-Patch-Format übernommen (bestehende Dateien bleiben unverändert gültig) und von einem Apply-Schritt in der Pipeline angewendet. Details in §7.2/§7.3. Generalisierte Muster-Regeln bleiben Phase ③.
 
 ## 5. Phase ① im Detail: C#-Namespace-Resolver (freigegeben)
@@ -100,7 +100,7 @@ XAML/Razor/DI-Verbindungen (Phase ③), Provenance (Phase ②), `global using`-P
 
 **② Provenance:** Kanten erhalten additive Felder `origin` (`"structural" | "llm" | "rule" | "manual"`), `ruleId?`, `confidence?`, `evidence?`. Merge-Script und Schema-Validierung setzen/erhalten sie; Dashboard zeigt sie in der NodeInfo/Kanten-Ansicht an. Das vorhandene Ad-hoc-Patch-Format (Weggabelung 4) wird hier formalisiert und maschinell angewendet. Detail in §7.
 
-**③ Linker-Infrastruktur + WPF-Pack:** Neue deterministische Pipeline-Phase nach dem Merge. Erste Regeln: XAML↔Code-behind über `x:Class`/Dateikonvention (mechanisch), XAML-Event-Attribut → Handler-Methode, XAML→ViewModel über `DataContext`/Bindings (heuristisch, niedrigere confidence), Razor `@inject`/Komponenten-Tags, DryIoc-Registrierung → `implements`/`depends_on`. Voraussetzungen: `.xaml` in XML-Config + XML/XAML-Grammatik aktivieren, XAML-Extractor. Regelformat = Weggabelung 1.
+**③ Linker-Infrastruktur + WPF-Pack:** Neue deterministische Pipeline-Phase nach dem Merge. Erste Regeln: XAML↔Code-behind über `x:Class`/Dateikonvention (mechanisch), XAML-Event-Attribut → Handler-Methode, XAML→ViewModel über `xmlns`-Typverwendung (heuristisch, niedrigere confidence), Razor `@inject`/Komponenten-Tags, DryIoc-Registrierung → `implements`/`configures`. Voraussetzungen: eigene `xaml`-Language-Config + XML-Grammatik als vendored wasm. Regelformat = Weggabelung 1. Scope-Entscheidung (2026-07-03): WPF-, Razor- und DryIoc-Pack in **einer** Phase. Detail in §8.
 
 **④ Gap-Diagnose:** `/understand-diagnose-gaps` clustert isolierte/schwach verbundene Nodes (nach Extension, Pfadmuster, Parser-Output, Framework-Signalen), gibt 2–3 Samples pro Cluster an einen Diagnose-Agent, der Fix-Vorschläge mit Leverage/Aufwand/False-Positive-Risiko erzeugt — priorisiert als Liste, konsumierbar durch ③.
 
@@ -225,6 +225,146 @@ Jede Degradierung (übersprungene Patch-Datei, übersprungener Eintrag, fehlende
 
 Generalisierte Muster-Regeln und Linker-Engine (Phase ③), Suppressions-Liste im Graphen, Origin-Filter im FilterPanel, confidence-Kalibrierung für LLM-Kanten (Phase ⑤), Änderungen an den LLM-Agenten-Prompts, Vereinheitlichung der Dedup-Schlüssel über alle Merge-Pfade, provenance-bewusste Dedup-Präferenz in Domain-/Knowledge-Merges (siehe §7.5).
 
-## 8. Messbasis MachineSIC (Ist-Stand 2026-07-02)
+## 8. Phase ③ im Detail: Linker-Engine und Regel-Packs (freigegeben)
+
+### 8.1 Regelformat
+
+Regeln sind JSON-Dateien, validiert durch ein Zod-Schema in core. Kein YAML: kein neues Parser-Dependency, Konsistenz mit dem Patch-Format (§7.2), und die Agenten aus Phase ④/⑤ schreiben beide Formate gleich gut. Mehrzeilige Tree-Sitter-Queries werden als String-Array notiert (Zeilen, beim Laden per `\n` gejoint).
+
+Eine Regel besteht aus drei Blöcken — Metadaten, Fakten, Link:
+
+```json
+{
+  "id": "wpf.event-handler",
+  "description": "XAML-Event-Attribut -> Handler-Methode im Code-behind",
+  "confidence": 0.9,
+  "edge": { "type": "calls", "direction": "forward" },
+  "facts": {
+    "xClass": { "language": "xaml", "query": [
+      "(attribute (attribute_name) @n",
+      "  (#eq? @n \"x:Class\")",
+      "  (attribute_value) @value)"
+    ] },
+    "attr": { "language": "xaml", "query": [
+      "(attribute (attribute_name) @name",
+      "  (attribute_value) @value)"
+    ] },
+    "method": { "builtin": "csharp.methodDecl" }
+  },
+  "link": {
+    "where": [
+      "attr.file == xClass.file",
+      "method.classFqn == xClass.value",
+      "method.name == attr.value"
+    ],
+    "source": "attr.file",
+    "target": "method.file",
+    "evidence": "{attr.name}=\"{attr.value}\" in {xClass.value}"
+  }
+}
+```
+
+**Fakten-Quellen, zwei Arten:**
+- **Query-Fakten:** eine Tree-Sitter-Query pro Sprache (Sprach-ID der Language-Config); jede Match-Instanz wird ein Fakt `{ file, <capture-Name>: <Text> }`. Für direkte Syntax-Captures (Attribute, Tags, Aufrufformen).
+- **`builtin:`-Fakten (der Escape-Hatch):** engine-intern implementierte Provider für alles, was eine einzelne Query nicht ausdrücken kann — abgeleitete oder aufgelöste Werte (FQN-Stitching über Namespace-Verschachtelung, `using`-Kontext-Auflösung, Razor-Direktiven ohne reife Grammatik). Provider liegen im Plugin (Code), Regeln referenzieren sie per Name; der Katalog steht in §8.3.
+
+**Join-Sprache bewusst winzig:** `where` ist eine Konjunktion von Gleichheits-Bedingungen der Form `faktA.feld == faktB.feld` über Fakt-Felder (`file`, Capture-Namen, Provider-Felder) — kein Ausdrucks-Interpreter, keine Funktionen, keine Regex im Join. Was mehr Logik braucht, wird ein `builtin`. `source`/`target` benennen je ein Fakt-`file`; `evidence` ist ein Template mit `{fakt.feld}`-Interpolation. `edge.type` wird gegen `EdgeTypeSchema.options` validiert (Phase-②-Lehre: Patch-Kanten umgingen die Typ-Validierung); `direction` gegen das Direction-Enum inkl. Aliase.
+
+**Ablage und Ladereihenfolge (Weggabelung 3):** Plugin-Packs aus `understand-anything-plugin/rules/*.json`, danach projektlokale Regeln aus `.understand-anything/rules/*.json` — beide alphabetisch, additiv, gleiches Schema. Kollidierende Regel-IDs: die zuletzt geladene (projektlokale) gewinnt mit Warnung — ein Projekt kann damit eine Pack-Regel gezielt überschreiben oder per `"enabled": false` deaktivieren.
+
+### 8.2 Engine-Architektur und Pipeline-Einbettung
+
+**Aufteilung Engine/CLI:** Die Engine ist TypeScript in `packages/core/src/linker/` (Regel-Schema, Fakten-Provider, Query-Runner, Join-/Kanten-Erzeugung) — strict-typisiert, per Vitest unit-testbar. Ein dünner CLI-Wrapper `skills/understand/apply-link-rules.mjs` lädt core per `createRequire` mit dist-Fallback — das in Phase ② gehärtete Muster von `apply-graph-patches.mjs`. Der try/catch um das Core-Laden umschließt **nur** das Laden (`engine=null`-Muster gemäß Phase-②-Re-Review-Befund): Ist core nicht ladbar, degradiert das Script zu einem No-op mit Warnung; ein Fehler in der Anwendung selbst wird nicht als Ladefehler etikettiert.
+
+```
+node apply-link-rules.mjs <graph.json> [--rules <verzeichnis>]...
+
+```
+
+Ohne `--rules` lädt das Script die zwei Default-Verzeichnisse aus §8.1: das `rules/`-Verzeichnis des Plugins (relativ zum Script-Standort aufgelöst) und `rules/` neben der Graph-Datei (d. h. `<repo>/.understand-anything/rules/`); explizite `--rules`-Angaben ersetzen beide Defaults. Fehlende Verzeichnisse sind No-ops.
+
+**Position in der Pipeline:** Merge → **apply-link-rules (neu)** → apply-graph-patches → Validierung. Der Linker braucht den fertigen Graphen (Datei-Knoten als Kantenanker); die manuellen Patches laufen danach, damit die Prioritäts-Invariante `manual > structural > rule > llm` mechanisch gilt — ein Patch kann eine frische `rule`-Kante noch entfernen oder auf `manual` hochstufen. Einbettung an denselben zwei Hook-Punkten wie §7.3: SKILL.md Phase 6 (vor dem Patch-Schritt, `$PHASE_WARNINGS`-Anbindung, Renumbering inkl. Sprungziel-Prüfung) und Auto-Update-Hook 3d (vor dem Patch-Aufruf, self-contained `$PLUGIN_ROOT`-Resolution wird mitgenutzt).
+
+**Datenfluss innerhalb des Scripts:**
+1. Graph laden, Datei-Knoten inventarisieren (Pfad ↔ Knoten-ID `file:<relpath>`, dieselbe Konvention wie §7.3 Schritt 1).
+2. Regeln laden (§8.1); defekte Regel = Warnung + Skip, nie Abbruch.
+3. Nur die Dateien parsen, deren Sprache von mindestens einer geladenen Regel referenziert wird (web-tree-sitter, Grammatik aus der Language-Config; MachineSIC: 147 `.cs` + 9 `.xaml`).
+4. Fakten sammeln: Query-Fakten je Regel + referenzierte `builtin:`-Provider (jeder Provider läuft höchstens einmal pro Datei, Ergebnisse werden zwischen Regeln geteilt).
+5. Joins auswerten → Kandidaten-Kanten mit `origin: "rule"`, `ruleId: <Regel-ID>`, `confidence` aus der Regel, `evidence` aus dem Template, `weight: 1.0`.
+6. Einfügen mit Prioritätslogik: existiert `(source, target, type)` bereits (Match über alle `direction`-Werte, wie §7.2.1) mit `origin` `llm` oder ungesetzt → Upgrade auf `rule` (+`ruleId`/`confidence`/`evidence`; `description` bleibt erhalten); mit `origin` `structural`, `manual` oder `rule` → unangetastet (first rule wins, deterministisch durch Ladereihenfolge); sonst append. Unbekannter Quell-/Ziel-Knoten → Eintrag überspringen mit Warnung.
+
+**Determinismus und Idempotenz:** keine Zeit-/Zufallsquellen, Dateien und Regeln in sortierter Reihenfolge, Kanten-Einfügung stabil sortiert. Zweimaliges Anwenden erzeugt byte-identischen Output (Vertragsbestandteil wie §7.3). Write-only-on-success.
+
+**Kanten-Granularität v1:** Datei→Datei. Member-Details (Handler-Methodenname, Komponententag) wandern in `evidence`; Kanten auf Member-Knoten sind dokumentierte Erweiterung, kein v1-Scope.
+
+### 8.3 Regel-Packs und builtin-Provider-Katalog
+
+**Voraussetzung XAML:** Neue Language-Config `packages/core/src/languages/configs/xaml.ts` (id `xaml`, Extension `.xaml`) mit vendored Grammatik `packages/tree-sitter-xml-wasm/tree-sitter-xml.wasm` — das wasm existiert fertig als GitHub-Release-Asset von `tree-sitter-grammars/tree-sitter-xml` v0.7.0 (verifiziert 2026-07-03); Vendoring nach dem Präzedenzfall `packages/tree-sitter-dart-wasm/`. Die bestehende `xml.ts`-Config bleibt unangetastet — keine Verhaltensänderung für `.xml`-Dateien.
+
+**Razor bewusst ohne Grammatik:** `tree-sitter-razor` ist auf npm unpubliziert und das GitHub-Repo (tris203) jung und ohne Releases (verifiziert 2026-07-03). Razor-Fakten kommen daher aus `builtin:`-Providern mit deterministischer Direktiven-Extraktion; ein späterer Grammatik-Umstieg ändert nur die Provider-Implementierung, nicht die Regeln.
+
+**builtin-Provider v1** (alle in `packages/core/src/linker/builtins/`):
+
+| Provider | Felder pro Fakt | Mechanik |
+|---|---|---|
+| `csharp.classFqn` | `file`, `value` (FQN), `name` (Kurzname) | Klassen-/Interface-Deklarationen mit Namespace-Stitching (Wiederverwendung der Phase-①-Extractor-Logik inkl. block-/file-scoped/verschachtelt) |
+| `csharp.methodDecl` | `file`, `classFqn`, `name` | Methodendeklarationen samt umgebender Klassen-FQN |
+| `csharp.registration` | `file`, `serviceFqn`, `implFqn` | `Register`-Familie (`Register<TService, TImpl>`, `RegisterMany`, `RegisterInstance` mit 2 Typargumenten) via Tree-Sitter-Query auf `invocation_expression`; Typargumente per `using`-Kontext der registrierenden Datei zu FQN aufgelöst (Phase-①-Auflösungsmaschinerie) |
+| `razor.inject` | `file`, `typeName` (wie notiert), `typeFqn?` (falls auflösbar) | `@inject <Typ> <Name>`-Direktiven; Auflösung qualifiziert per FQN, sonst eindeutiger Kurzname gegen `csharp.classFqn` (mehrdeutig → kein Fakt, Warnung) |
+| `razor.componentTag` | `file`, `name` | PascalCase-Tags im Markup (`<FooComponent …>`) |
+| `razor.componentDecl` | `file`, `name` | `.razor`-Datei als Komponente (Name = Basename) |
+
+**WPF-Pack** (`rules/wpf.json`, 3 Regeln):
+
+| Regel | Mechanik | Kante | confidence |
+|---|---|---|---|
+| `wpf.code-behind` | `x:Class`-Attributwert == `csharp.classFqn.value` | cs —`implements`→ xaml | 1.0 |
+| `wpf.event-handler` | generischer Join: Attributwert == Methodenname in der `x:Class`-Klasse — keine feste Event-Namensliste; ein `{Binding …}`-Wert matcht nie einen Methodennamen | xaml —`calls`→ cs | 0.9 |
+| `wpf.xmlns-viewmodel` | `xmlns:p="clr-namespace:X.Y"` + Typverwendung `p:Foo` im selben Dokument == `classFqn` `X.Y.Foo` | xaml —`depends_on`→ cs | 0.8 |
+
+**Razor-Pack** (`rules/razor.json`, 2 Regeln):
+
+| Regel | Mechanik | Kante | confidence |
+|---|---|---|---|
+| `razor.inject` | `razor.inject.typeFqn` == `csharp.classFqn.value` | razor —`depends_on`→ cs | 0.9 |
+| `razor.component-tag` | `razor.componentTag.name` == `razor.componentDecl.name` (eindeutiger Basename, sonst skip) | razor —`depends_on`→ razor | 0.9 |
+
+**DryIoc-Pack** (`rules/dryioc.json`, 2 Regeln):
+
+| Regel | Mechanik | Kante | confidence |
+|---|---|---|---|
+| `dryioc.implements` | `registration.implFqn` == `classFqn.value` (Impl-Datei) und `registration.serviceFqn` == `classFqn.value` (Service-Datei); `Register<IFoo, Foo>()` beweist die Implementierung | Foo.cs —`implements`→ IFoo.cs | 1.0 |
+| `dryioc.registration` | Composition-Root-Datei → registrierte Impl-Datei | Registrar —`configures`→ Foo.cs | 1.0 |
+
+`wpf.xmlns-viewmodel` und `wpf.event-handler` sind vollständig als Query-Fakten + Join ausdrückbar; die `x:Class`-/`xmlns`-Captures sind reine Attribut-Queries auf der XML-Grammatik. Die C#- und Razor-Seiten laufen über die builtin-Provider.
+
+### 8.4 Fehlerbehandlung und Observability
+
+Konsequente Übernahme des §7.5-Musters: Ungültige Regeldatei (kaputtes JSON, Schema-Verstoß) → `Warning:` + Datei überspringen. Nicht kompilierende Query → `Warning:` + Regel überspringen. Grammatik nicht ladbar (wasm fehlt/inkompatibel) → alle Regeln dieser Sprache überspringen, Rest läuft. Unlesbare/unparsebare Quelldatei → `Warning:` + Datei überspringen. Unbekannter Knoten → Eintrag überspringen (Zähler). Kein Regel-Verzeichnis → No-op ohne Fehler. Jede Degradierung als `Warning:`-präfixierte stderr-Zeile, vom Aufrufer in `$PHASE_WARNINGS` gesammelt; nur stderr-Ausgabe. Summary-Zeile am Ende: `apply-link-rules: rules=N files=N added=N upgraded=N skippedRules=N skippedEdges=N`.
+
+### 8.5 Mitgenommene Follow-ups (einzige Nicht-Linker-Arbeiten der Phase)
+
+1. **Hook-Cleanup-Fix:** Der Auto-Update-Hook löscht mit `rm -rf intermediate` die `scan-result.json`, die sein eigener Schritt 3d Punkt 2 beim Folgelauf braucht (Divergenz zu SKILL.md, issue #293). Wird im Zuge der ohnehin anstehenden Hook-Einbettung behoben: Cleanup bewahrt `scan-result.json`.
+2. **origin-Enum-Single-Source:** `EdgeOriginSchema` wird alleinige Quelle des Enum-Literals (`types.ts` per `z.infer`, `autoFixGraph` per `.options`) — bevor der Linker als erster `rule`-Producer dazukommt. Die übrigen Ledger-Follow-ups bleiben ausdrücklich außerhalb des Phase-③-Scopes.
+
+### 8.6 Verifikation und Messgrößen
+
+- **Core-Unit-Tests (Vitest):** Regel-Schema (gültig/ungültig/enabled:false/ID-Kollision), Join-Auswertung inkl. Drei-Fakten-Join und Null-Treffer, evidence-Template, Upgrade-/Prioritätslogik gegen alle vier origin-Werte, jeder builtin-Provider einzeln gegen kleine Quelltext-Fixtures, Query-Runner gegen die echte XML-Grammatik.
+- **CLI-End-to-End (spawnSync-Harness wie `test_apply_graph_patches`):** Mini-Fixture-Projekt pro Pack (2–3 Dateien), Idempotenz-Byte-Vergleich, Degradationspfade (defekte Regel, fehlende Grammatik, unknown node, core nicht ladbar), projektlokale Regel inkl. Override einer Pack-Regel.
+- **Messgrößen am Prüfstein MachineSIC** (Messergebnis wird nach Umsetzung hier in §8.6 nachgetragen, analog §7.6): Code-behind-Paarung **9/9** (§3), Event-Handler-Kanten **> 0** (§3), je Pack Kantenzahl + manuelle Stichprobe, **0** veränderte `structural`-/`manual`-Kanten, Idempotenz byte-identisch, von Regeln bestätigte `llm`-Kanten erscheinen als Upgrade-Zähler. Razor-/DryIoc-Zahlen werden gemessen und mit Stichprobe belegt (MachineSIC enthält Blazor und DryIoc; keine Vorab-Simulation wie bei Phase ①).
+
+### 8.7 Bewusste v1-Grenzen
+
+- Razor-Typauflösung kennt `_Imports.razor` nur als weitere `@using`-Quelle; mehrdeutige Kurznamen erzeugen keine Kante (fehlende, nie falsche Kanten).
+- Der generische Event-Handler-Join kann theoretisch ein Nicht-Event-Attribut treffen, dessen Wert zufällig ein Methodenname ist (daher 0.9, nicht 1.0).
+- `wpf.xmlns-viewmodel` sieht nur explizite Typverwendung im XAML; `DataContext`-Zuweisungen im Code-behind bleiben unerkannt.
+- `csharp.registration` deckt die generische `Register`-Familie ab; Convention-Scanning (`RegisterMany` per Assembly-Scan ohne Typargumente) und Factory-Lambdas bleiben unerkannt.
+- Kanten enden auf Datei-Knoten; Member-Knoten-Granularität ist Erweiterung.
+
+### 8.8 Nicht-Ziele von Phase ③
+
+Grammar-Authoring (§2), Razor-Grammatik-Vendoring, Member-Knoten-Kanten, Origin-Filter im Dashboard, Gap-Diagnose (Phase ④), Feedback-Loop (Phase ⑤), Abarbeitung der übrigen Ledger-Follow-ups, Vereinheitlichung der Dedup-Schlüssel über alle Merge-Pfade.
+
+## 9. Messbasis MachineSIC (Ist-Stand 2026-07-02)
 
 920 Kanten: 419 contains, 233 exports, 92 calls, 88 depends_on, 35 configures, 22 implements, 12 related, 7 tested_by, 5 triggers, 5 inherits, 2 documents, **0 imports**. 79/147 C#-Dateien nur contains/exports. XAML: 9 Views, ø 1,0 Kanten, 1/9 Code-behind-Paarung, 0 Event-Handler-Kanten. 3/3 `.resx` isoliert.
