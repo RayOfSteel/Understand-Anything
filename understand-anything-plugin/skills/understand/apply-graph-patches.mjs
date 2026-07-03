@@ -113,16 +113,20 @@ function normalizeDirection(direction, DIRECTION_ALIASES) {
 /**
  * Normalize a legacy hand-written patch (pre-§7.2 KernelResearch convention)
  * to the canonical shape: `edges_added`/`edges_removed` become
- * `edges_to_add`/`edges_to_remove`, and entry fields `from`/`to`/`kind`
- * become `source`/`target`/`type`. Canonical fields always win.
+ * `edges_to_add`/`edges_to_remove`, and entry fields `from`/`src`, `to`/`dst`,
+ * `kind`, `annotation` become `source`, `target`, `type`, `note`.
+ * Canonical fields always win.
  */
 function normalizeLegacyPatch(data) {
   const legacyEntry = (entry) => {
     if (!entry || typeof entry !== 'object') return entry;
     const e = { ...entry };
     if (e.source === undefined && typeof e.from === 'string') e.source = e.from;
+    if (e.source === undefined && typeof e.src === 'string') e.source = e.src;
     if (e.target === undefined && typeof e.to === 'string') e.target = e.to;
+    if (e.target === undefined && typeof e.dst === 'string') e.target = e.dst;
     if (e.type === undefined && typeof e.kind === 'string') e.type = e.kind;
+    if (e.note === undefined && typeof e.annotation === 'string') e.note = e.annotation;
     return e;
   };
   if (!Array.isArray(data.edges_to_add) && Array.isArray(data.edges_added)) {

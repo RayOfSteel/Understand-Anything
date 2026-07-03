@@ -364,3 +364,78 @@ describe('apply-graph-patches.mjs — patch application', () => {
     expect(result.stderr).toContain('patchFiles=15');
   });
 });
+
+describe('apply-graph-patches.mjs — legacy patch format', () => {
+  it('applies legacy edges_added entries with from/to/kind: adds and upgrades', () => {
+    const r = runScript({
+      // Existing a->b imports edge (llm) plus room for a new b->a edge.
+      graph: makeGraph([edge({ origin: 'llm', description: 'llm said so' })]),
+      patches: {
+        'legacy-fromto.patch.json': {
+          id: 'legacy-fromto',
+          edges_added: [
+            // Upgrades the existing edge ("import" alias → imports).
+            { from: 'file:a.cs', to: 'file:b.cs', kind: 'import', note: 'seen in include' },
+            // Adds a new edge ("invokes" alias → calls).
+            { from: 'file:b.cs', to: 'file:a.cs', kind: 'invokes', note: 'callback' },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.graph.edges).toHaveLength(2);
+    const upgraded = r.graph.edges.find((e) => e.source === 'file:a.cs');
+    expect(upgraded.origin).toBe('manual');
+    expect(upgraded.ruleId).toBe('legacy-fromto.patch.json');
+    expect(upgraded.confidence).toBe(1.0);
+    expect(upgraded.description).toBe('llm said so');
+    expect(upgraded.evidence).toBe('seen in include');
+    const added = r.graph.edges.find((e) => e.source === 'file:b.cs');
+    expect(added.target).toBe('file:a.cs');
+    expect(added.type).toBe('calls');
+    expect(added.direction).toBe('forward');
+    expect(added.origin).toBe('manual');
+    expect(added.ruleId).toBe('legacy-fromto.patch.json');
+    expect(added.confidence).toBe(1.0);
+    expect(added.evidence).toBe('callback');
+  });
+
+  it('applies legacy entries keyed src/dst (T09/T10 style) with annotation as evidence', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'legacy-srcdst.patch.json': {
+          id: 'legacy-srcdst',
+          edges_added: [
+            { src: 'file:a.cs', dst: 'file:b.cs', kind: 'calls', annotation: 'recursion detail' },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.graph.edges).toHaveLength(1);
+    const e = r.graph.edges[0];
+    expect(e.source).toBe('file:a.cs');
+    expect(e.target).toBe('file:b.cs');
+    expect(e.type).toBe('calls');
+    expect(e.origin).toBe('manual');
+    expect(e.ruleId).toBe('legacy-srcdst.patch.json');
+    expect(e.confidence).toBe(1.0);
+    expect(e.evidence).toBe('recursion detail');
+  });
+
+  it('accepts a legacy file whose only title is a top-level id (title fallback)', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'id-only.patch.json': { id: 'just-an-id', edges_added: [] },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.stderr).not.toContain('skipping patch');
+    expect(r.stderr).toContain('patchFiles=1');
+  });
+});
