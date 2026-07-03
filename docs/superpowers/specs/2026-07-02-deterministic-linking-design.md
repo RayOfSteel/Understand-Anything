@@ -229,7 +229,7 @@ Generalisierte Muster-Regeln und Linker-Engine (Phase ③), Suppressions-Liste i
 
 ### 8.1 Regelformat
 
-Regeln sind JSON-Dateien, validiert durch ein Zod-Schema in core. Kein YAML: kein neues Parser-Dependency, Konsistenz mit dem Patch-Format (§7.2), und die Agenten aus Phase ④/⑤ schreiben beide Formate gleich gut. Mehrzeilige Tree-Sitter-Queries werden als String-Array notiert (Zeilen, beim Laden per `\n` gejoint).
+Regeln sind JSON-Dateien, validiert durch ein Zod-Schema in core. Kein YAML — nicht wegen eines fehlenden Parsers (core hat bereits ein `yaml`-Dependency), sondern wegen Format-Konsistenz: Patches (§7.2) und Regeln sind beides deklarative Graph-Eingriffe und sollen dieselbe Notation sprechen; die Agenten aus Phase ④/⑤ schreiben beide Formate gleich gut. Mehrzeilige Tree-Sitter-Queries werden als String-Array notiert (Zeilen, beim Laden per `\n` gejoint).
 
 Eine Regel besteht aus drei Blöcken — Metadaten, Fakten, Link:
 
