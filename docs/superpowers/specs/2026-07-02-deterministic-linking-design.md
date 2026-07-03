@@ -128,7 +128,7 @@ Taxonomie (entschieden 2026-07-03): `structural` = deterministisch aus Analyse a
 
 Abgrenzung `confidence` vs. `weight`: `weight` behält seine bestehende Semantik (Stärke/Wichtigkeit der Beziehung, wird vom Layout genutzt); `confidence` ist epistemisch — wie sicher ist die Existenz der Kante. Deterministische Herkünfte (`structural`, `manual`) tragen `confidence: 1.0`; bei `llm`-Kanten bleibt das Feld in Phase ② ungesetzt (keine Scheinzahlen — Kalibrierung wäre Phase-⑤-Arbeit).
 
-Schema (`packages/core/src/schema.ts`): Die vier Felder werden **explizit** im `GraphEdgeSchema` deklariert — kein pauschales `.passthrough()`, damit Tippfehler-Felder weiterhin draußen bleiben und `origin` enum-validiert wird. `autoFixGraph` behandelt sie analog `weight`: ungültiger `origin`-Wert → Feld entfernen + auto-corrected-Issue; `confidence` wird auf [0, 1] geklemmt. `validateGraph` reicht die Felder beim Neuzusammenbau des Graph-Objekts durch (heute gehen unbekannte Kantenfelder genau dort verloren — dazu ein Regressionstest). Alte Graphen ohne die Felder validieren unverändert.
+Schema (`packages/core/src/schema.ts`): Die vier Felder werden **explizit** im `GraphEdgeSchema` deklariert — kein pauschales `.passthrough()`, damit Tippfehler-Felder weiterhin draußen bleiben und `origin` enum-validiert wird. `autoFixGraph` behandelt sie analog `weight`: ungültiger `origin`-Wert → Feld entfernen + auto-corrected-Issue; `confidence` wird auf [0, 1] geklemmt. `validateGraph` reicht die Felder beim Neuzusammenbau des Graph-Objekts durch (heute gehen unbekannte Kantenfelder genau dort verloren — dazu ein Regressionstest). Dass dieses Strippen real ist, zeigt der Bestand: `recover_imports_from_scan` markiert wiederhergestellte Kanten seit jeher mit `recoveredFromImportMap: true` (`merge-batch-graphs.py:978`), und genau dieses Feld überlebt die Schema-Validierung heute nicht. Alte Graphen ohne die Felder validieren unverändert.
 
 ### 7.2 Patch-Format (formalisiertes Ad-hoc-Format)
 
@@ -158,33 +158,44 @@ Die 15 vorhandenen handgeschriebenen Dateien in Nutzer-Repos bleiben **unveränd
 
 Grundsatz: **Jeder deterministische Erzeuger stempelt seine eigenen Kanten** beim Erzeugen; ein Nachlauf-Script übernimmt Reklassifikation, Default und Patch-Apply.
 
-**Neues Script `skills/understand/apply-graph-patches.mjs`** (lädt Core aus `dist/`, nur stderr-Logging, Per-Item-Resilienz, deterministische Verarbeitung):
+**Erzeuger-Stempel in `merge-batch-graphs.py`** (lokale Änderungen an den beiden bestehenden deterministischen Kanten-Produzenten):
+- `recover_imports_from_scan` (Zeile ~972): wiederhergestellte `imports`-Kanten erhalten `origin: "structural"`, `confidence: 1.0` direkt beim Anlegen — die Funktion weiß per Konstruktion, dass ihre Kanten aus dem importMap stammen. Das bestehende Feld `recoveredFromImportMap` bleibt unangetastet.
+- `tested_by`-Linker Pass 2 (Zeile ~697): ergänzte Kanten erhalten `origin: "structural"`, `evidence: "path convention"`.
+
+Weil gestempelte Kanten über `batch-existing.json` in Inkrementalläufe hineinwandern, bleibt die Klassifikation zwischen Voll- und Inkrementallauf konsistent — der Stempel am Erzeuger ist die primäre Verteidigung, die Reklassifikation im Script nur die zweite (für `imports`-Kanten, die das LLM selbst emittiert hat).
+
+**Neues Script `skills/understand/apply-graph-patches.mjs`** (lädt Core aus `dist/`, nur stderr-Logging, Warnungen mit `Warning:`-Präfix, Per-Item-Resilienz, deterministische Verarbeitung):
 
 ```
-node apply-graph-patches.mjs <graph.json> [--import-map <pfad>] [--patches <verzeichnis>]
+node apply-graph-patches.mjs <graph.json> [--scan-result <pfad>] [--patches <verzeichnis>]
 ```
 
 Drei Schritte in fester Reihenfolge:
-1. **Reklassifikation `structural`:** Jede `imports`-Kante zwischen zwei `file:`-Knoten, deren Zielpfad in `importMap[quellpfad]` steht, wird zu `origin: "structural"`, `confidence: 1.0`. Ohne `--import-map` entfällt der Schritt (Standalone-Modus). Bereits von einem Erzeuger gestempelte Kanten bleiben unangetastet.
+1. **Reklassifikation `structural`:** Jede `imports`-Kante zwischen zwei `file:`-Knoten, deren Zielpfad in `importMap[quellpfad]` steht, wird zu `origin: "structural"`, `confidence: 1.0`. Der importMap kommt aus dem bereits persistierten `scan-result.json` (Phase-7-Cleanup bewahrt diese Datei ausdrücklich, SKILL.md „preserving scan-result.json"); die Zuordnung Knoten-ID ↔ Pfad folgt exakt der bestehenden Konvention `file:<importMap-Pfad>` aus `recover_imports_from_scan`. Ohne `--scan-result` entfällt der Schritt (Standalone-Modus). Kanten, die bereits einen `origin` tragen, bleiben in diesem Schritt unangetastet.
 2. **Default:** Jede Kante ohne `origin` erhält `origin: "llm"` — die Messgröße „jede Kante trägt Herkunft" ist damit strukturell garantiert.
-3. **Patch-Apply:** Dateien aus `--patches` (Default: das Verzeichnis `patches/` neben der Graph-Datei, d. h. `<repo>/.understand-anything/patches/`) gemäß §7.2. Existiert eine hinzuzufügende Kante bereits, wird sie nicht dupliziert, sondern auf `manual`-Provenance hochgestuft (menschliche Behauptung = stärkerer Beleg); `description` bleibt erhalten. Fehlt ein referenzierter Knoten, wird der Eintrag mit Warnung übersprungen — Patches dürfen den Lauf nie abbrechen.
+3. **Patch-Apply:** Dateien aus `--patches` (Default: das Verzeichnis `patches/` neben der Graph-Datei, d. h. `<repo>/.understand-anything/patches/`) gemäß §7.2. Patch-Einträge matchen auf `(source, target, type)` nach Alias-Normalisierung, über alle `direction`-Werte hinweg. Existiert eine hinzuzufügende Kante bereits, wird sie nicht dupliziert, sondern auf `manual`-Provenance hochgestuft — das gilt ausdrücklich auch für in Schritt 1 gestempelte `structural`-Kanten (menschliche Behauptung = stärkster Beleg); `description` bleibt erhalten. Fehlt ein referenzierter Knoten, wird der Eintrag mit Warnung übersprungen — Patches dürfen den Lauf nie abbrechen.
+
+Die Schrittfolge stellt als Invariante her: Nach dem Lauf trägt jede Kante die stärkste zutreffende Provenance gemäß `manual > structural > rule > llm`.
 
 **Idempotenz ist Vertragsbestandteil:** Zweimaliges Anwenden auf denselben Graphen erzeugt byte-identischen Output.
 
-**Einbettung:**
-- `merge-batch-graphs.py` stempelt seine selbst erzeugten Pass-2-`tested_by`-Kanten mit `origin: "structural"`, `evidence: "path convention"` (lokale Änderung).
-- `/understand` (SKILL.md) persistiert den importMap als `import-map.json` ins Intermediate-Verzeichnis und ruft das Script nach dem Graph-Review als letzten Schritt vor dem finalen Schreiben auf.
-- `/understand-diff --auto-update` ruft dasselbe Script nach dem inkrementellen Merge auf — Patches überleben auch Inkrementalläufe.
+**Einbettung (an den real existierenden Hook-Punkten):**
+- `/understand` (SKILL.md): Das Script läuft zu Beginn von **Phase 6 (REVIEW)** auf `assembled-graph.json`, **vor** der inline-deterministischen Validierung bzw. dem `--review`-Pfad — die bestehenden Qualitäts-Gates prüfen damit das gepatchte Ergebnis, nicht umgekehrt. Seine `Warning:`-Zeilen werden wie bei allen Phasen in `$PHASE_WARNINGS` gesammelt und erscheinen im Abschlussbericht (etablierte Observability-Konvention).
+- **Auto-Update-Hook** (`hooks/auto-update-prompt.md`, der Post-Commit-Pfad — ein `--auto-update`-Flag auf `/understand-diff` existiert nicht): ruft das Script nach seinem inkrementellen Merge und vor dem Schreiben von `knowledge-graph.json` auf; `scan-result.json` wird genutzt, sofern vorhanden. Patches überleben damit auch Inkrementalläufe.
 
-**Konfliktregel bei Dedup:** Liefern mehrere Quellen dieselbe Kante `(source, target, type)`, gilt die Provenance-Priorität `manual > structural > rule > llm`; die `description` des LLM bleibt als Zusatzinformation erhalten.
+**Dedup-Realität und Konfliktregel:** Die bestehenden Merge-Pfade deduplizieren unterschiedlich — der Voll-Merge nach `(source, target, type, direction)` mit Gewichts-Präferenz (`merge-batch-graphs.py:833`), Auto-Update-Hook und Core-Normalisierung nach `(source, target, type)`. Phase ② vereinheitlicht das nicht; die Provenance-Priorität `manual > structural > rule > llm` wird als End-Invariante durch die Schrittfolge des Apply-Scripts hergestellt, nicht durch Umbau der Dedup-Logiken. Die `description` des LLM bleibt bei Upgrades als Zusatzinformation erhalten.
 
 ### 7.4 Dashboard
 
 Minimal gemäß Rahmen: In der Connections-Liste von `NodeInfo.tsx` erhält jede Kante ein kleines Origin-Badge (vier Farben, konsistent mit dem Theme) mit `title`-Tooltip für `ruleId`, `confidence`, `evidence`, sofern vorhanden. Kanten ohne `origin` (alte Graphen) zeigen kein Badge — kein Fehler, keine Layoutlücke. Ein Origin-Filter im FilterPanel ist Nicht-Ziel.
 
-### 7.5 Fehlerbehandlung
+### 7.5 Fehlerbehandlung und Observability
 
 Ungültige Patch-Datei (kaputtes JSON, fehlende Pflichtfelder) → Warnung auf stderr + Datei überspringen. Unbekannter Knoten → Eintrag überspringen. Kein Patches-Verzeichnis → No-op ohne Fehler. Alte Graphen ohne Provenance-Felder validieren unverändert.
+
+Jede Degradierung (übersprungene Patch-Datei, übersprungener Eintrag, fehlendes scan-result.json) wird als `Warning:`-präfixierte stderr-Zeile ausgegeben und vom aufrufenden Ablauf in `$PHASE_WARNINGS` gesammelt — kein stiller Drop (etablierte Invariante aus dem Semantic-Batching-Design, dort §„Warnings"). Zusätzlich schreibt das Script eine Zusammenfassung (reklassifiziert/gestempelt/hinzugefügt/entfernt/übersprungen) auf stderr.
+
+**Bekannte v1-Grenze:** Die Merge-Pfade außerhalb des `/understand`-Kernablaufs (`merge-subdomain-graphs.py` — höheres Gewicht gewinnt; `merge-knowledge-graph.py` — first wins) kennen die Provenance-Priorität nicht; dort kann eine gestempelte Kante durch eine ungestempelte Dublette ersetzt werden. Gegenmittel ist die Idempotenz des Apply-Scripts (erneuter Lauf stellt `manual`-Kanten und Defaults wieder her); provenance-bewusste Dedup-Präferenz in diesen Pfaden ist Follow-up, nicht Phase-②-Scope.
 
 ### 7.6 Verifikation und Messgröße
 
@@ -195,7 +206,7 @@ Ungültige Patch-Datei (kaputtes JSON, fehlende Pflichtfelder) → Warnung auf s
 
 ### 7.7 Nicht-Ziele von Phase ②
 
-Generalisierte Muster-Regeln und Linker-Engine (Phase ③), Suppressions-Liste im Graphen, Origin-Filter im FilterPanel, confidence-Kalibrierung für LLM-Kanten (Phase ⑤), Änderungen an den LLM-Agenten-Prompts.
+Generalisierte Muster-Regeln und Linker-Engine (Phase ③), Suppressions-Liste im Graphen, Origin-Filter im FilterPanel, confidence-Kalibrierung für LLM-Kanten (Phase ⑤), Änderungen an den LLM-Agenten-Prompts, Vereinheitlichung der Dedup-Schlüssel über alle Merge-Pfade, provenance-bewusste Dedup-Präferenz in Domain-/Knowledge-Merges (siehe §7.5).
 
 ## 8. Messbasis MachineSIC (Ist-Stand 2026-07-02)
 
