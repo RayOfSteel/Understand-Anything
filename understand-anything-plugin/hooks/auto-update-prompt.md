@@ -230,7 +230,7 @@ Perform lightweight validation (no graph-reviewer agent):
 
 1. Write the final knowledge graph to `$PROJECT_ROOT/.understand-anything/knowledge-graph.json`.
 
-2. Run the provenance & patch post-pass in place on the just-written graph (plugin root as resolved in step 1 of this hook):
+2. Run the provenance & patch post-pass in place on the just-written graph. If `$PLUGIN_ROOT` is not yet resolved (Step 0 point 9 only resolves it when `.understandignore` handling runs), resolve it now the same way: use `$CLAUDE_PLUGIN_ROOT` if set, otherwise `$HOME/.understand-anything-plugin`, and validate that `$candidate/skills/understand/apply-graph-patches.mjs` exists. If neither candidate resolves, do **not** abort at this late stage — the graph is already written and valid. Report "Warning: apply-graph-patches skipped: cannot locate plugin install at `$CLAUDE_PLUGIN_ROOT` or `$HOME/.understand-anything-plugin`" in the final summary (no silent skip) and continue with the meta.json step below.
 
    ```bash
    node "$PLUGIN_ROOT/skills/understand/apply-graph-patches.mjs" \
