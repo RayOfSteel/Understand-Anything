@@ -154,6 +154,17 @@ Die 15 vorhandenen handgeschriebenen Dateien in Nutzer-Repos bleiben **unveränd
 - **Determinismus:** Patch-Dateien alphabetisch; pro Datei erst `edges_to_remove`, dann `edges_to_add`.
 - **Erweiterbarkeit:** Das Format ist so angelegt, dass Phase ③ es um Muster-Regeln erweitern kann, ohne bestehende Dateien zu brechen (neue Top-Level-Abschnitte, keine Umdeutung vorhandener Felder).
 
+#### 7.2.1 Akzeptiertes Legacy-Format (Bestand: KernelResearch)
+
+Befund aus der Umsetzung (Task 4): 13 der 15 realen KernelResearch-Patch-Dateien folgen nicht dem obigen kanonischen Format, sondern einer älteren Ad-hoc-Konvention. Der Loader in `apply-graph-patches.mjs` akzeptiert beide Formate; kanonische Felder gewinnen immer, Legacy-Felder greifen nur als Fallback:
+
+- **Abschnitts-Aliase:** `edges_added` → `edges_to_add`, `edges_removed` → `edges_to_remove` (nur wenn der kanonische Abschnitt fehlt).
+- **Feld-Aliase pro Eintrag:** `from`/`src` → `source`, `to`/`dst` → `target`, `kind` → `type`, `annotation` → `note` (die `src`/`dst`-Variante kommt in T09/T10 vor).
+- **Titel-Fallback:** `_meta.title` → Top-Level-`title` → Top-Level-`id`; fehlt alles, wird die Datei mit Warnung übersprungen.
+- **Fehlende Edge-Abschnitte** gelten als leer — eine reine Summary-Index-Datei (wie `2026-05-25-security-review-consolidated.patch.json`) läuft als No-op durch.
+- **`nodes_added` wird nicht unterstützt:** Node-Einträge werden mit `Warning:` ignoriert; Kanten-Einträge, die solche nie angelegten Knoten referenzieren, werden per Regelfall „unbekannter Knoten" einzeln übersprungen.
+- **Upgrade-Pfad-Grenze:** Beim Hochstufen einer bereits existierenden Kante auf `manual` werden `direction` und `weight` des Patch-Eintrags ignoriert — der Match läuft über `(source, target, type)` über alle `direction`-Werte hinweg. Wer eine Kantenrichtung umdrehen will, muss die Kante per `edges_to_remove` entfernen und per `edges_to_add` neu anlegen.
+
 ### 7.3 Pipeline und Datenfluss (entschieden: Nachlauf-Script, Ansatz A)
 
 Grundsatz: **Jeder deterministische Erzeuger stempelt seine eigenen Kanten** beim Erzeugen; ein Nachlauf-Script übernimmt Reklassifikation, Default und Patch-Apply.
@@ -203,6 +214,12 @@ Jede Degradierung (übersprungene Patch-Datei, übersprungener Eintrag, fehlende
 - **Script-Tests:** add/remove/Upgrade vorhandener Kanten/Reklassifikation/Idempotenz/kaputte Patch-Dateien; die 15 realen KernelResearch-Patches als Fixtures — alle müssen ohne Änderung durchlaufen.
 - **Merge-Script-Test:** Pass-2-`tested_by`-Kanten tragen den `structural`-Stempel.
 - **Messgröße am Prüfstein (MachineSIC):** 100 % der Kanten tragen `origin`; die ≈ 418 `imports`-Kanten aus Phase ① werden als `structural` klassifiziert; der Abschlussbericht weist die Verteilung `structural`/`llm`/`manual` aus. Zweitprüfstein KernelResearch: alle 15 Patches wenden sauber an.
+
+**Messergebnis (2026-07-03):**
+
+- **MachineSIC** (147 C#-Dateien aus `fingerprints.json`): `extract-import-map` liefert `filesScanned=147 filesWithImports=99 totalEdges=418` (Punktlandung auf der Phase-①-Zahl). `recover_imports_from_scan` stellt `recovered=418` `imports`-Kanten mit `origin: "structural"` her; der anschließende Apply-Lauf meldet `reclassified=0 defaulted=920` — die Reklassifikation von 0 bestätigt, dass der Erzeuger-Stempel greift und das Script nichts nachstempeln muss. Endverteilung: **1338 Kanten gesamt, `structural`=418 (alle `imports`), `llm`=920, `manual`=0, ohne `origin`=0** (Assert erfüllt). Die 7 `tested_by`-Kanten tragen hier `llm`, nicht `structural`: das simulierte Segment fuhr nur die Import-Recovery; der `tested_by`-Stempel sitzt im Pass-2-Linker des Merge-Laufs, der in dieser Messung nicht durchlaufen wurde (per Merge-Script-Test separat abgedeckt).
+- **KernelResearch** (Graph mit 22997 Kanten, 15 reale Patch-Dateien): Exit 0, Summary `reclassified=0 defaulted=22997 patchFiles=15 added=0 upgraded=20 removed=0 skipped=123`. Endverteilung: **`llm`=22977, `manual`=20, ohne `origin`=0**. Die 20 Upgrades stammen aus den beiden kanonisch formatierten Patches (`clr-entrypoints-to-cocor` 10, `cocor-callback-chain` 10 — deren `file:`-Knoten existieren im Graphen). Alle 123 Skips sind „unbekannter Knoten"-Adds aus den Legacy-Dateien T01–T12 (T01=11, T02=17, T03=8, T04=7, T05=9, T06=14, T07=11, T08=16, T09=5, T10=3, T11=7, T12=15): sie referenzieren synthetische Knoten-IDs (`fn:`, `scr:`, `case:`, `op:`, `contract:`, …), die per `nodes_added` hätten entstehen sollen — `nodes_added` wird laut §7.2.1 ignoriert (109 Node-Einträge über 12 Dateien, je mit Warnung), also fehlen die Knoten erwartungsgemäß. Ein `edges_to_remove`-Eintrag (`cocor-callback-chain`: tlsbSocP.h → SocP/…/cocInterpreter.h) matcht keine Kante — die zu entfernende Fehlkante existiert im aktuellen Graphen nicht; protokollierter No-op, kein Fehler. `security-review-consolidated` ist der Summary-Index ohne Edge-Abschnitte (No-op).
+- **Idempotenz:** Beide Apply-Läufe ein zweites Mal identisch ausgeführt; `cmp` bestätigt byte-identische Dateien (MachineSIC: Zweitlauf `reclassified=0 defaulted=0`; KernelResearch: Zweitlauf meldet erneut `upgraded=20 skipped=123`, ändert aber kein Byte).
 
 ### 7.7 Nicht-Ziele von Phase ②
 
