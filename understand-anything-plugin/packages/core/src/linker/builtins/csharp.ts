@@ -19,6 +19,10 @@ interface ClassInfo {
 interface RegistrationInfo {
   serviceRaw: string;
   implRaw: string;
+  /** Enclosing namespace FQNs at the call site, innermost first (ancestors only). */
+  namespaces: string[];
+  /** Using directives in scope at the call site (file level + enclosing namespace bodies). */
+  usings: string[];
 }
 interface FileInfo {
   usings: string[];
@@ -80,7 +84,36 @@ function walkNamespaceBody(nsNode: Node, parentNs: string, info: FileInfo): void
   }
 }
 
-function collectRegistrations(node: Node, info: FileInfo): void {
+/** Extract the dotted target of a using_directive, or null. */
+function usingTarget(node: Node): string | null {
+  const target = findChild(node, "qualified_name") ?? findChild(node, "identifier");
+  return target ? target.text : null;
+}
+
+/** Using directives that are direct children of a namespace body (declaration_list). */
+function directUsings(body: Node): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < body.childCount; i++) {
+    const c = body.child(i);
+    if (c?.type !== "using_directive") continue;
+    const target = usingTarget(c);
+    if (target) out.push(target);
+  }
+  return out;
+}
+
+/**
+ * Collect Register<TService, TImpl>() calls together with the lexical scope of
+ * each call site: the chain of enclosing namespace FQNs (innermost first) and
+ * the using directives visible there (file level + enclosing namespace bodies).
+ * Sibling namespaces are NOT in scope — only ancestors are.
+ */
+function collectRegistrations(
+  node: Node,
+  nsChain: string[],
+  usings: string[],
+  info: FileInfo,
+): void {
   if (node.type === "invocation_expression") {
     const fn = node.childForFieldName("function");
     let generic: Node | null = null;
@@ -101,7 +134,12 @@ function collectRegistrations(node: Node, info: FileInfo): void {
             if (t) typeArgs.push(t.text);
           }
           if (typeArgs.length === 2) {
-            info.registrations.push({ serviceRaw: typeArgs[0], implRaw: typeArgs[1] });
+            info.registrations.push({
+              serviceRaw: typeArgs[0],
+              implRaw: typeArgs[1],
+              namespaces: nsChain,
+              usings,
+            });
           }
         }
       }
@@ -109,7 +147,23 @@ function collectRegistrations(node: Node, info: FileInfo): void {
   }
   for (let i = 0; i < node.childCount; i++) {
     const c = node.child(i);
-    if (c) collectRegistrations(c, info);
+    if (!c) continue;
+    if (c.type === "namespace_declaration") {
+      const ns = namespaceName(c);
+      const parent = nsChain[0] ?? "";
+      const full = ns ? (parent ? `${parent}.${ns}` : ns) : parent;
+      const body = c.childForFieldName("body");
+      if (body) {
+        collectRegistrations(
+          body,
+          full ? [full, ...nsChain] : nsChain,
+          [...usings, ...directUsings(body)],
+          info,
+        );
+      }
+    } else {
+      collectRegistrations(c, nsChain, usings, info);
+    }
   }
 }
 
@@ -128,8 +182,8 @@ function analyze(root: Node): FileInfo {
     if (!child) continue;
     switch (child.type) {
       case "using_directive": {
-        const target = findChild(child, "qualified_name") ?? findChild(child, "identifier");
-        if (target) info.usings.push(target.text);
+        const target = usingTarget(child);
+        if (target) info.usings.push(target);
         break;
       }
       case "file_scoped_namespace_declaration": {
@@ -150,7 +204,9 @@ function analyze(root: Node): FileInfo {
         if (CLASS_LIKE.has(child.type)) collectClass(child, fileScopedNs, info);
     }
   }
-  collectRegistrations(root, info);
+  // File-scoped namespace declarations put all following top-level siblings
+  // into that namespace, so the whole root walk starts with that chain.
+  collectRegistrations(root, fileScopedNs ? [fileScopedNs] : [], info.usings, info);
   cache.set(root, info);
   return info;
 }
@@ -215,12 +271,14 @@ export const csharpRegistrationProvider: BuiltinProvider = {
   collect(file, _source, root) {
     if (!root) return [];
     const info = analyze(root);
+    // Each fact carries the scope of its own call site (not the file-wide
+    // lists): sibling namespaces must not leak into resolution candidates.
     return info.registrations.map((r) => ({
       file,
       _serviceRaw: r.serviceRaw,
       _implRaw: r.implRaw,
-      _usings: JSON.stringify(info.usings),
-      _namespaces: JSON.stringify(info.namespaces),
+      _usings: JSON.stringify(r.usings),
+      _namespaces: JSON.stringify(r.namespaces),
     }));
   },
   finalize(own, all, warn) {
