@@ -1,0 +1,207 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T08-extsyseventcall-inserts",
+  "trace_area": "T08 — TMS_EXTSYSEVENTCALL insert paths",
+  "scope": "Settle the F-T01.4 Open question: enumerate every INSERT into TMS_EXTSYSEVENTCALL across .scr/.scp/.cs/.cpp/.h/.sql/.xml; for each, trace upstream callers and determine whether any T04 WCF op can drive the insert. Confirm whether TDMSAPConnector inserts (it does not, UPDATE-only) and whether any DB-side trigger/SP cascades into the table (none found).",
+  "source_file": "docs/security-review/traces/T08-extsyseventcall-inserts.md",
+  "nodes_added": [
+    {
+      "id": "scr:_ncmRefintTDM_LISTDeleteLast::main",
+      "kind": "script_entry",
+      "name": "_ncmRefintTDM_LISTDeleteLast.scr main(sListId, ...)",
+      "file": "Application/src/scr/ncm/_ncmRefintTDM_LISTDeleteLast.scr",
+      "line_start": 23,
+      "line_end": 225,
+      "summary": "Refint hook on TDM_LIST delete (@Calling-position: Skript wird von Refint aufgerufen, wenn eine Werkzeugliste gelöscht wird). Reads system parameter NCM_ONLISTDELETE[1]; if == 1 archive+delete branch (line 133 INSERT), if == 2 delete-everything branch (line 206 INSERT). Both INSERTs use $['] apostrophe-doubling escape. Dispatched by tlsRefInt — caller chain is mask-driven (only mask state-machines issue delete from TDM_LIST in the repo)."
+    },
+    {
+      "id": "scr:_ncmChangeStateNCMFile::main",
+      "kind": "script_entry",
+      "name": "_ncmChangeStateNCMFile.scp main(sMaskObjectId, sCallScriptPosition, ...)",
+      "file": "Application/src/scr/ncm/_ncmChangeStateNCMFile.scp",
+      "line_start": 237,
+      "line_end": 369,
+      "summary": "NCM file-state-change helper. Header @Calling-position: tdmList. INSERT at line 34 (inside RemoveFileFromProd helper) uses $['] escape. Triggered only from tdmList mask state transitions."
+    },
+    {
+      "id": "scr:tdt_Test_CreateExportEvent::main",
+      "kind": "script_entry",
+      "name": "tdt_Test_CreateExportEvent.scp main(sExportArea, sExportId)",
+      "file": "Application/src/scr/TDT/custom/tdt_Test_CreateExportEvent.scp",
+      "line_start": 21,
+      "line_end": 47,
+      "summary": "TDT export-queue helper. INSERT at line 26 uses bare $(null)sExportArea / $(null)sExportId — NO apostrophe-doubling, unlike all other 5 INSERT sites. Callers all pass mask-scope IDs not user free-text, so today not exploitable via wire; F-T08.2 flags as defence-in-depth gap."
+    },
+    {
+      "id": "scr:tdt_Test_ExportTool::main",
+      "kind": "script_entry",
+      "name": "tdt_Test_ExportTool.scp main(sToolId)",
+      "file": "Application/src/scr/TDT/custom/tdt_Test_ExportTool.scp",
+      "line_start": 51,
+      "line_end": 62,
+      "summary": "SAD-installed mask-button entry on tdmTool. Header documents the install SQL (TMS_USEREVENT row with USERID='SAD', EVENTTYPE=0, FLAGS=1). CallScript at line 54 invokes tdt_Test_CreateExportEvent with literal area='TOOL' and sToolId from $TDM_TOOL.TOOLID mask scope. NOT in any WCF op's script catalog."
+    },
+    {
+      "id": "scr:tdt_Test_ExportList::main",
+      "kind": "script_entry",
+      "name": "tdt_Test_ExportList.scp main(sListId)",
+      "file": "Application/src/scr/TDT/custom/tdt_Test_ExportList.scp",
+      "line_start": 51,
+      "line_end": 62,
+      "summary": "Sibling of tdt_Test_ExportTool, same SAD-installed pattern on tdmList. CallScript at line 54 passes area='LIST'."
+    },
+    {
+      "id": "scr:tdt_Test_ExportComp::main",
+      "kind": "script_entry",
+      "name": "tdt_Test_ExportComp.scp main(sCompId)",
+      "file": "Application/src/scr/TDT/custom/tdt_Test_ExportComp.scp",
+      "line_start": 51,
+      "line_end": 62,
+      "summary": "Sibling of tdt_Test_ExportTool, same SAD-installed pattern on tdmComp. CallScript at line 54 passes area='COMP'."
+    },
+    {
+      "id": "mask:tdmList::ChangeStateNCMFile_branch",
+      "kind": "mask_event_branch",
+      "name": "tdmList mask — NCM state-change INSERT branch",
+      "file": "Application/src/app/tdm/tdmList.xml",
+      "line_start": 7610,
+      "line_end": 7700,
+      "summary": "Inline mask-event SQL in tdmList state-transition handler. INSERT at line 7640 uses $['] escape throughout. Triggered by user state-change action on a tool-list; nFlag2Service==1 branch (Service-flagged transitions). UI-only."
+    },
+    {
+      "id": "mask:tdmList::DeleteWithServiceFlag_branch",
+      "kind": "mask_event_branch",
+      "name": "tdmList mask — NCM file-delete-with-service INSERT branch",
+      "file": "Application/src/app/tdm/tdmList.xml",
+      "line_start": 8200,
+      "line_end": 8300,
+      "summary": "Inline mask-event SQL in tdmList file-delete handler. INSERT at line 8252 uses $['] escape. Gated by THISUSER==SAD short-circuit at line 8210 — SAD-only path. UI-only."
+    },
+    {
+      "id": "cli:TDMSAPConnector::Main",
+      "kind": "cli_entry",
+      "name": "TDMSAPConnector.exe Main(args[])",
+      "file": "V4Kernel/src/CLR/TDMSAPConnector/Program.cs",
+      "line_start": 15,
+      "line_end": 250,
+      "summary": "CLI executable. Takes 4 mandatory args (dbconnection, extsysid, extsyseventid, extsyseventcallnr) identifying an existing TMS_EXTSYSEVENTCALL row. SELECTs login data + PARAM rows for the row, calls SAP BAPI_GOODSMVT_CREATE, UPDATEs the parent row at line 207 with the result. DOES NOT INSERT. Confirmed by grep insert Program.cs returning zero hits."
+    },
+    {
+      "id": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "sql_call_site_family",
+      "name": "All script-level INSERT INTO TMS_EXTSYSEVENTCALL call sites",
+      "file": "(synthetic family)",
+      "line_start": 0,
+      "line_end": 0,
+      "summary": "Synthetic node aggregating the 6 INSERT sites: _ncmRefintTDM_LISTDeleteLast.scr:133, :206; _ncmChangeStateNCMFile.scp:34; tdt_Test_CreateExportEvent.scp:26; tdmList.xml:7640, :8252. Five of six use $['] escape; one (tdt_Test_CreateExportEvent) uses bare $(null) — see F-T08.2."
+    },
+    {
+      "id": "case:tSql::Execute(update_TMS_EXTSYSEVENTCALL)",
+      "kind": "sql_call_site_family",
+      "name": "TDMSAPConnector UPDATE call site",
+      "file": "V4Kernel/src/CLR/TDMSAPConnector/Program.cs",
+      "line_start": 207,
+      "line_end": 220,
+      "summary": "The only kernel-side write to TMS_EXTSYSEVENTCALL. UPDATE, not INSERT — sets STATE/MSG/RETURNCODE/RETURNTEXT on the row identified by the 3 CLI-arg PKs after the SAP call returns."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "scr:_ncmRefintTDM_LISTDeleteLast::main",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "sql_insert",
+      "annotation": "nOnListDelete==1 branch (line 133) and ==2 branch (line 206); uses $['] escape; INSERT-from-SELECT (column values come from joined query, not bare param splicing)."
+    },
+    {
+      "from": "scr:_ncmChangeStateNCMFile::main",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "sql_insert",
+      "annotation": "RemoveFileFromProd helper line 34; uses $['] escape throughout; main() called from tdmList mask state-transition only."
+    },
+    {
+      "from": "scr:tdt_Test_CreateExportEvent::main",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "sql_insert",
+      "annotation": "Line 26 INSERT uses bare $(null) — apostrophe-doubling NOT applied. Defence-in-depth gap per F-T08.2; not exploitable today because callers are SAD mask-buttons passing mask-scope IDs."
+    },
+    {
+      "from": "scr:tdt_Test_ExportTool::main",
+      "to": "scr:tdt_Test_CreateExportEvent::main",
+      "kind": "call_script",
+      "annotation": "soc->CallScript(TMS_SCR, 'tdt_Test_CreateExportEvent', 'scp', , 'TOOL', $TDM_TOOL.TOOLID) — line 54."
+    },
+    {
+      "from": "scr:tdt_Test_ExportList::main",
+      "to": "scr:tdt_Test_CreateExportEvent::main",
+      "kind": "call_script",
+      "annotation": "soc->CallScript(TMS_SCR, 'tdt_Test_CreateExportEvent', 'scp', , 'LIST', $TDM_LIST.LISTID) — line 54."
+    },
+    {
+      "from": "scr:tdt_Test_ExportComp::main",
+      "to": "scr:tdt_Test_CreateExportEvent::main",
+      "kind": "call_script",
+      "annotation": "soc->CallScript(TMS_SCR, 'tdt_Test_CreateExportEvent', 'scp', , 'COMP', $TDM_COMP.COMPID) — line 54."
+    },
+    {
+      "from": "mask:tdmList::ChangeStateNCMFile_branch",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "sql_insert",
+      "annotation": "tdmList.xml:7640 inline SQL; $['] escape applied; user-action triggered on tdmList state transition where nFlag2Service==1."
+    },
+    {
+      "from": "mask:tdmList::DeleteWithServiceFlag_branch",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "sql_insert",
+      "annotation": "tdmList.xml:8252 inline SQL; $['] escape applied; gated by THISUSER==SAD short-circuit at line 8210."
+    },
+    {
+      "from": "cli:TDMSAPConnector::Main",
+      "to": "case:tSql::Execute(update_TMS_EXTSYSEVENTCALL)",
+      "kind": "sql_update",
+      "annotation": "Program.cs:207 — UPDATE only, sets RETURNCODE/RETURNTEXT/STATE on existing row identified by CLI args extsysid/extsyseventid/extsyseventcallnr."
+    },
+    {
+      "from": "cli:TDMSAPConnector::Main",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "negative_edge",
+      "annotation": "VERIFIED ABSENT — grep insert Program.cs returns zero hits. SAP connector consumes pre-existing rows; never creates them. Row creator is integrator-side, outside this repo."
+    },
+    {
+      "from": "wcf:ITdmToolData::*",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "negative_edge",
+      "annotation": "VERIFIED ABSENT — none of the 12 iMMS5 scripts (per T01.c catalog) reach an INSERT into TMS_EXTSYSEVENTCALL."
+    },
+    {
+      "from": "wcf:IToolingServer::*",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "negative_edge",
+      "annotation": "VERIFIED ABSENT — the 6 p{ServiceModName}{Op}.scr fixed names have zero shipped matches per F-T01.4; even if matched, no chain reaches an INSERT."
+    },
+    {
+      "from": "wcf:ITdmMmsToolData::*",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "negative_edge",
+      "annotation": "VERIFIED ABSENT — per T12 the additional ITdmMmsToolData ops dispatch scripts that don't reach this table either."
+    },
+    {
+      "from": "wcf:IDatabseImportExport::*",
+      "to": "case:tSql::Execute(insert_TMS_EXTSYSEVENTCALL)",
+      "kind": "negative_edge",
+      "annotation": "VERIFIED ABSENT — IDatabseImportExport is a named-pipe SQL proxy that doesn't dispatch scripts (per F-T01.4)."
+    },
+    {
+      "from": "scr:tdt_Test_ExportTool::main",
+      "to": "case:wire_entry",
+      "kind": "negative_edge",
+      "annotation": "Not invoked by any WCF op. Installed as TMS_USEREVENT mask-button on tdmTool restricted to USERID='SAD' (see header line 22-36 of the .scp file)."
+    },
+    {
+      "from": "mask:tdmList::ChangeStateNCMFile_branch",
+      "to": "case:wire_entry",
+      "kind": "negative_edge",
+      "annotation": "tdmList is a UI mask form, not a WCF operation. No WCF dispatch enters mask events directly."
+    }
+  ],
+  "edges_removed": []
+}

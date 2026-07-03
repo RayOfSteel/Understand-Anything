@@ -1,0 +1,167 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T03-vm-safeguards",
+  "trace_area": "T03 — VM runtime safeguards",
+  "scope": "Function-level nodes and edges for the Coco/R bytecode VM's runtime safety primitives: the budget-less interpret loop, the exit(1)-on-overflow stack, the format-string opcode primitive, and the absent call-depth gates.",
+  "source_file": "docs/security-review/traces/T03-vm-safeguards.md",
+  "nodes_added": [
+    {
+      "id": "fn:Machine::Interpret",
+      "kind": "function",
+      "name": "Machine::Interpret",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 565,
+      "line_end": 615,
+      "summary": "Main VM loop. `for(;;)` over Step() with no budget guard."
+    },
+    {
+      "id": "fn:Machine::Step",
+      "kind": "function",
+      "name": "Machine::Step",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 618,
+      "line_end": 2000,
+      "summary": "Opcode dispatcher. Contains all case_cocXxx bodies. Not deep-read end-to-end here; key cases re-traced individually."
+    },
+    {
+      "id": "fn:Machine::Push",
+      "kind": "function",
+      "name": "Machine::Push",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 291,
+      "line_end": 303,
+      "summary": "VM data-stack push. On overflow: OnError, system(\"PAUSE>0\"), exit(1) — terminates process."
+    },
+    {
+      "id": "fn:Machine::Pop",
+      "kind": "function",
+      "name": "Machine::Pop",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 312,
+      "line_end": 324,
+      "summary": "VM data-stack pop. On underflow: OnError, system(\"PAUSE>0\"), exit(1) — terminates process."
+    },
+    {
+      "id": "op:Machine::Interpret::cocFORMAT",
+      "kind": "opcode_case",
+      "name": "Machine::Interpret cocFORMAT",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 1558,
+      "line_end": 1607,
+      "summary": "Format opcode. Classifier looks at trailing 2 chars only; non-numeric branch (line 1597) invokes MFC CString::Format with single supplied arg — varargs printf with mismatched arg count → format-string primitive."
+    },
+    {
+      "id": "op:Machine::Interpret::cocCALLO",
+      "kind": "opcode_case",
+      "name": "Machine::Interpret cocCALLO",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 1659,
+      "line_end": 1706,
+      "summary": "Call of kernel method (OnDoFunc). No depth check."
+    },
+    {
+      "id": "op:Machine::Interpret::cocCALLF",
+      "kind": "opcode_case",
+      "name": "Machine::Interpret cocCALLF",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 1707,
+      "line_end": 1880,
+      "summary": "Unified function call (kernel/script/native). No depth check."
+    },
+    {
+      "id": "op:Machine::Interpret::cocENTER",
+      "kind": "opcode_case",
+      "name": "Machine::Interpret cocENTER",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 1276,
+      "line_end": 1282,
+      "summary": "Enter function frame. Pushes BP. No depth gate."
+    },
+    {
+      "id": "op:Machine::Interpret::cocPCALL",
+      "kind": "opcode_case",
+      "name": "Machine::Interpret cocPCALL",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 1525,
+      "line_end": 1537,
+      "summary": "Prepare-call. Pushes 7 saves. No depth gate. Recursion fills data stack until Push overflows."
+    },
+    {
+      "id": "op:Machine::Interpret::cocLEAVE",
+      "kind": "opcode_case",
+      "name": "Machine::Interpret cocLEAVE",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 1290,
+      "line_end": 1296,
+      "summary": "Leave function frame. Pops BP. No counter decrement (because no counter exists)."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "fn:Machine::Push",
+      "to": "ext:libc::system",
+      "kind": "calls_on_overflow",
+      "note": "system(\"PAUSE>0\") — vestigial console-app hardening attempt.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 299
+    },
+    {
+      "from": "fn:Machine::Push",
+      "to": "ext:libc::exit",
+      "kind": "terminates_process",
+      "note": "exit(1) on stack overflow — kills the entire WCF service host.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 301
+    },
+    {
+      "from": "fn:Machine::Pop",
+      "to": "ext:libc::exit",
+      "kind": "terminates_process",
+      "note": "exit(1) on stack underflow.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 321
+    },
+    {
+      "from": "op:Machine::Interpret::cocFORMAT",
+      "to": "ext:MFC::CString::Format",
+      "kind": "varargs_printf",
+      "note": "Format with one supplied arg; format string may contain N specifiers — undefined behaviour or `%n` write primitive.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 1597
+    },
+    {
+      "from": "op:Machine::Interpret::cocFORMAT",
+      "to": "ext:CRT::_stprintf_s",
+      "kind": "secure_varargs_printf",
+      "note": "Numeric branches; mismatch invokes invalid-parameter handler → typically process termination.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 1585
+    },
+    {
+      "from": "op:Machine::Interpret::cocCALLO",
+      "to": "fn:Machine::OnDoFunc",
+      "kind": "dispatches_no_depth_check",
+      "note": "No m_nCallDepth counter; only ceiling is data-stack size 32768.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 1688
+    },
+    {
+      "from": "op:Machine::Interpret::cocCALLF",
+      "to": "fn:Machine::OnDoFunc",
+      "kind": "dispatches_no_depth_check",
+      "note": "Same as cocCALLO, unified path for unknown call kind.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 1731
+    },
+    {
+      "from": "op:Machine::Interpret::cocPCALL",
+      "to": "fn:Machine::Push",
+      "kind": "fills_stack_for_recursion",
+      "note": "7-double save state per call; recursion of depth 32768/7≈4600 overflows.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 1529
+    }
+  ],
+  "edges_removed": [],
+  "notes": "cocFORMAT's format-string primitive is sharper than the prior review's M8 framing: not just a 'service-crash' but at least 'service-crash plus plausible info-leak'. Wire reachability for the format-string itself remains unproven and is flagged as an open question for future tracing."
+}

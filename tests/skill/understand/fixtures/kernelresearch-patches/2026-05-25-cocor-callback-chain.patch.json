@@ -1,0 +1,97 @@
+{
+  "_meta": {
+    "title": "Wire CoCoR Grammar callbacks to V4 consumers",
+    "rationale": "Closes gaps surfaced by /understand-explain on TDM.atg callbacks. Five fixes: (1) re-route tlsbSocP.h's CoCoR include from the dev/test copy under SocP/TDM_Compiler/ to the production copy under SysTools/CoCoR/ (matches the literal `#include \"CoCoR\\cocInterpreter.h\"`); (2) record that tlsSocP.h inherits/depends on tlsbSocP.h; (3) record that TDM.atg generates Parser.cpp/.h/Scanner.cpp/.h via Coco.exe; (4) link the SysTools/CoCoR Parser.cpp to its cocInterpreter.h sibling so the production runtime is no longer orphaned; (5) add an inheritance edge tlsbSocP.h -> SysTools/CoCoR/cocInterpreter.h.",
+    "created": "2026-05-25"
+  },
+  "edges_to_remove": [
+    {
+      "source": "file:V4Kernel/src/V4/Tlsb/tlsbSocP.h",
+      "target": "file:V4Kernel/src/Products/SocP/TDM_Compiler/cocInterpreter.h",
+      "type": "imports",
+      "reason": "Misrouted: include path `CoCoR\\cocInterpreter.h` resolves to SysTools/CoCoR/, not SocP/TDM_Compiler/ (the latter is a standalone test app)."
+    }
+  ],
+  "edges_to_add": [
+    {
+      "source": "file:V4Kernel/src/V4/Tlsb/tlsbSocP.h",
+      "target": "file:V4Kernel/src/Products/SysTools/CoCoR/cocInterpreter.h",
+      "type": "imports",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "#include \"CoCoR\\cocInterpreter.h\" — production runtime"
+    },
+    {
+      "source": "file:V4Kernel/src/V4/Tlsb/tlsbSocP.h",
+      "target": "file:V4Kernel/src/Products/SysTools/CoCoR/cocInterpreter.h",
+      "type": "depends_on",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "class tlsbSocP : public cocInterpreter, public tlsbVirtualFunc"
+    },
+    {
+      "source": "file:V4Kernel/src/V4/Tls/tlsSocP.h",
+      "target": "file:V4Kernel/src/V4/Tlsb/tlsbSocP.h",
+      "type": "depends_on",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "class tlsSocP : public tlsInterpreter, public tlsbSocP — overrides every On* callback"
+    },
+    {
+      "source": "file:V4Kernel/src/Products/SocP/TDM_Compiler/TDM.atg",
+      "target": "file:V4Kernel/src/Products/SocP/TDM_Compiler/Parser.cpp",
+      "type": "configures",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "Coco/R input grammar — Parser.cpp/.h are regenerated from this file via Coco.exe"
+    },
+    {
+      "source": "file:V4Kernel/src/Products/SocP/TDM_Compiler/TDM.atg",
+      "target": "file:V4Kernel/src/Products/SocP/TDM_Compiler/Parser.h",
+      "type": "configures",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "Coco/R input grammar — generates Parser.h"
+    },
+    {
+      "source": "file:V4Kernel/src/Products/SocP/TDM_Compiler/TDM.atg",
+      "target": "file:V4Kernel/src/Products/SocP/TDM_Compiler/Scanner.cpp",
+      "type": "configures",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "Coco/R input grammar — generates Scanner.cpp from CHARACTERS/TOKENS/IGNORE sections"
+    },
+    {
+      "source": "file:V4Kernel/src/Products/SocP/TDM_Compiler/TDM.atg",
+      "target": "file:V4Kernel/src/Products/SysTools/CoCoR/Parser.cpp",
+      "type": "configures",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "Same/equivalent TDMSkriptPlus grammar drives the production Parser.cpp in SysTools/CoCoR/"
+    },
+    {
+      "source": "file:V4Kernel/src/Products/SysTools/CoCoR/Parser.cpp",
+      "target": "file:V4Kernel/src/Products/SysTools/CoCoR/cocInterpreter.h",
+      "type": "depends_on",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "Parser's semantic-action callbacks emit through gen-> (a cocInterpreter* set by cocInterpreter::Parse before parser.Parse())"
+    },
+    {
+      "source": "function:V4Kernel/src/Products/SocP/TDM_Compiler/Parser.cpp:Parse",
+      "target": "function:V4Kernel/src/Products/SocP/TDM_Compiler/Parser.cpp:TDMSkriptPlus",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "Parser::Parse() invokes the top-level grammar production TDMSkriptPlus()"
+    },
+    {
+      "source": "function:V4Kernel/src/Products/SocP/TDM_Compiler/cocInterpreter.cpp:Parse",
+      "target": "function:V4Kernel/src/Products/SocP/TDM_Compiler/Parser.cpp:Parse",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "cocInterpreter::Parse() wires gen=this, tab=new RuntimeSymbolTable(), then parser.Parse()"
+    }
+  ]
+}

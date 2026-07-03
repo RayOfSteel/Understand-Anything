@@ -1,0 +1,210 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T01-sqli-spine",
+  "trace_area": "T01 — SQLi spine",
+  "scope": "Function-level nodes and edges along the wire→script→DB SQLi chain confirmed in docs/security-review/traces/T01-sqli-spine.md",
+  "source_file": "docs/security-review/traces/T01-sqli-spine.md",
+  "nodes_added": [
+    {
+      "id": "fn:tlsReplTool::ReplDollar",
+      "kind": "function",
+      "name": "tlsReplTool::ReplDollar",
+      "file": "V4Kernel/src/V4/Tls/tlsReplTool.cpp",
+      "line_start": 638,
+      "line_end": 1083,
+      "summary": "Recursive $VAR substitution. Default branch (lines 930-942) does no SQL escaping. Opt-in $['] form at 693-708 + 1035-1038 doubles single apostrophes."
+    },
+    {
+      "id": "fn:tlsSocP::OnReplDollar",
+      "kind": "function",
+      "name": "tlsSocP::OnReplDollar",
+      "file": "V4Kernel/src/V4/Tls/tlsSocP.cpp",
+      "line_start": 448,
+      "line_end": 466,
+      "summary": "Coco/R VM callback. Delegates to tlsReplTool::ReplDollar with mask/object event context."
+    },
+    {
+      "id": "fn:Machine::EvaluateString",
+      "kind": "function",
+      "name": "Machine::EvaluateString",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 514,
+      "line_end": 531,
+      "summary": "If string is wildcard (contains $), calls virtual OnReplDollar. Drives all runtime dollar substitution."
+    },
+    {
+      "id": "op:Machine::Interpret::cocCONST",
+      "kind": "opcode_case",
+      "name": "Machine::Interpret cocCONST",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line_start": 1297,
+      "line_end": 1311,
+      "summary": "Opcode that pushes a string/number constant. For WRITABLE strings, evaluates dollar substitutions before pushing."
+    },
+    {
+      "id": "case:tlsSql::OnDoFunc::Select",
+      "kind": "dispatch_case",
+      "name": "tlsSql::OnDoFunc Select",
+      "file": "V4Kernel/src/V4/Tls/tlsSql.cpp",
+      "line_start": 13075,
+      "line_end": 13094,
+      "summary": "Script-dispatched sql->Select(...). Forwards substituted command string verbatim via Select(...,%s,sCmd.c_str())."
+    },
+    {
+      "id": "case:tlsSql::OnDoFunc::Execute",
+      "kind": "dispatch_case",
+      "name": "tlsSql::OnDoFunc Execute",
+      "file": "V4Kernel/src/V4/Tls/tlsSql.cpp",
+      "line_start": 12877,
+      "line_end": 12903,
+      "summary": "Script-dispatched sql->Execute(...). Forwards substituted command string verbatim via ExecuteF(...,%s,sCmd.c_str())."
+    },
+    {
+      "id": "case:tlsSql::OnDoFunc::Check",
+      "kind": "dispatch_case",
+      "name": "tlsSql::OnDoFunc Check",
+      "file": "V4Kernel/src/V4/Tls/tlsSql.cpp",
+      "line_start": 13121,
+      "line_end": 13142,
+      "summary": "Script-dispatched sql->Check(...). Delegates to Select(...,%s,sCmd.c_str()) then checks FoundData()."
+    },
+    {
+      "id": "fn:TmsNCLink::CallScript",
+      "kind": "function",
+      "name": "TmsNCLink::CallScript",
+      "file": "V4Kernel/src/V4/ClrTmsInterface/TmsNCLink.cpp",
+      "line_start": 50,
+      "line_end": 124,
+      "summary": "C++/CLI bridge. MarshalStrings each WCF param verbatim into vsParaVal, then tlsSoc::Exec. No escaping or validation."
+    },
+    {
+      "id": "fn:TdmToolData::Connect",
+      "kind": "function",
+      "name": "TdmToolData::Connect",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 570,
+      "line_end": 606,
+      "summary": "WCF [OperationContract]. Enqueues imms5Connect.scr with caller-asserted SystemName as the sole parameter. No auth, no validation."
+    },
+    {
+      "id": "fn:tlsUtil::ProcExtSysEvent",
+      "kind": "function",
+      "name": "tlsUtil::ProcExtSysEvent",
+      "file": "V4Kernel/src/V4/Tls/tlsUtil.cpp",
+      "line_start": 709,
+      "line_end": 900,
+      "summary": "TMS_EXTSYSEVENTCALL queue dispatcher. Reads SCRIPTFILENAME and PARAMVAL01..50 from the DB row, calls CallScript with those as the script's main() args."
+    },
+    {
+      "id": "scr:imms5Connect::main",
+      "kind": "script_entry",
+      "name": "imms5Connect.scr main(sMachineId)",
+      "file": "Application/src/scr/iMMS5/imms5Connect.scr",
+      "line_start": 24,
+      "line_end": 52,
+      "summary": "Shipped iMMS5 connect handler. Three SQL sites at lines 32-35, 37-40, 44-46 splice $sMachineId bare into SQL with no escape."
+    },
+    {
+      "id": "scr:pahdEventhandlerApriso2TDM::main",
+      "kind": "script_entry",
+      "name": "pahdEventhandlerApriso2TDM.scr main(...)",
+      "file": "Custom/pAHD/scr/pahdEventhandlerApriso2TDM.scr",
+      "line_start": 25,
+      "line_end": 80,
+      "summary": "AHD customer queue handler invoked by tlsUtil::ProcExtSysEvent (not directly WCF-reachable). Lines 41-46 splice $EXTSYSID/$EXTSYSEVENTID/$EXTSYSEVENTCALLNR bare into SELECT."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "fn:TdmToolData::Connect",
+      "to": "fn:TmsNCLink::CallScript",
+      "kind": "invokes",
+      "note": "WCF op enqueues into dictMsgIdTplScrParamList; worker thread invokes CallScript with imms5Connect.scr + caller-asserted SystemName.",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 589
+    },
+    {
+      "from": "fn:TmsNCLink::CallScript",
+      "to": "scr:imms5Connect::main",
+      "kind": "starts_script",
+      "note": "tlsSoc::Exec(vsParaVal,...) launches the script's main() with WCF params verbatim.",
+      "file": "V4Kernel/src/V4/ClrTmsInterface/TmsNCLink.cpp",
+      "line": 74
+    },
+    {
+      "from": "scr:imms5Connect::main",
+      "to": "case:tlsSql::OnDoFunc::Check",
+      "kind": "script_calls",
+      "note": "sql->Check(\"... '$sMachineId' ...\") at imms5Connect.scr:32-35. cocCONST evaluates string before dispatch.",
+      "file": "Application/src/scr/iMMS5/imms5Connect.scr",
+      "line": 32
+    },
+    {
+      "from": "scr:imms5Connect::main",
+      "to": "case:tlsSql::OnDoFunc::Execute",
+      "kind": "script_calls",
+      "note": "sql->Execute(...,'... $sMachineId ...') at imms5Connect.scr:37-40 (update) and 44-46 (insert).",
+      "file": "Application/src/scr/iMMS5/imms5Connect.scr",
+      "line": 37
+    },
+    {
+      "from": "op:Machine::Interpret::cocCONST",
+      "to": "fn:Machine::EvaluateString",
+      "kind": "calls",
+      "note": "WRITABLE string constants are dollar-substituted before push.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 1305
+    },
+    {
+      "from": "fn:Machine::EvaluateString",
+      "to": "fn:tlsSocP::OnReplDollar",
+      "kind": "virtual_dispatch",
+      "note": "OnReplDollar is a pure virtual on Machine; tlsSocP supplies the override that hooks into the tlsObject world.",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/Machine.cpp",
+      "line": 519
+    },
+    {
+      "from": "fn:tlsSocP::OnReplDollar",
+      "to": "fn:tlsReplTool::ReplDollar",
+      "kind": "delegates",
+      "note": "Sets sValue = csExpression then invokes ReplDollar(...) on the tlsReplTool base.",
+      "file": "V4Kernel/src/V4/Tls/tlsSocP.cpp",
+      "line": 463
+    },
+    {
+      "from": "fn:tlsUtil::ProcExtSysEvent",
+      "to": "scr:pahdEventhandlerApriso2TDM::main",
+      "kind": "queue_dispatches",
+      "note": "When TMS_EXTSYSEVENTCALL.SCRIPTFILENAME='pahdEventhandlerApriso2TDM' and STATENO=1 — see tlsUtil.cpp:883.",
+      "file": "V4Kernel/src/V4/Tls/tlsUtil.cpp",
+      "line": 883,
+      "conditional": true
+    },
+    {
+      "from": "case:tlsSql::OnDoFunc::Select",
+      "to": "fn:tlsSql::Select",
+      "kind": "forwards",
+      "note": "Calls Select(pmaskEvent, bAddAmpAutomatic, pinterpreterEvent, _T(\"%s\"), sCmd.c_str()) — no escape on the passthrough.",
+      "file": "V4Kernel/src/V4/Tls/tlsSql.cpp",
+      "line": 13091
+    },
+    {
+      "from": "case:tlsSql::OnDoFunc::Execute",
+      "to": "fn:tlsSql::ExecuteF",
+      "kind": "forwards",
+      "note": "Calls ExecuteF(...,%s,sCmd.c_str()) — no escape on the passthrough.",
+      "file": "V4Kernel/src/V4/Tls/tlsSql.cpp",
+      "line": 12902
+    },
+    {
+      "from": "case:tlsSql::OnDoFunc::Check",
+      "to": "fn:tlsSql::Select",
+      "kind": "forwards",
+      "note": "Check delegates to Select(...,%s,sCmd.c_str()) then verifies FoundData.",
+      "file": "V4Kernel/src/V4/Tls/tlsSql.cpp",
+      "line": 13131
+    }
+  ],
+  "edges_removed": [],
+  "notes": "All citations re-read in the main context for this trace. F-T01.4 records that pahdEventhandlerApriso2TDM.scr is NOT directly WCF-reachable — the dominant wire-driven SQLi chain is via TdmToolData.Connect → imms5Connect.scr. The opt-in $['] escape syntax was missed by the prior review and is documented here for use in the rewrite's remediation discussion."
+}

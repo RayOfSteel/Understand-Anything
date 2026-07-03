@@ -1,0 +1,146 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T06-wcf-deserialization",
+  "trace_area": "T06 — WCF deserialization",
+  "scope": "Survey of every DataContract / DataMember type and serializer choice on the 4 WCF hosts surfaced in T04. Verifies absence of NetDataContractSerializer, BinaryFormatter, SoapFormatter, LosFormatter, ObjectStateFormatter, TypeNameHandling, and polymorphic [KnownType] gadgets.",
+  "source_file": "docs/security-review/traces/T06-wcf-deserialization.md",
+  "nodes_added": [
+    {
+      "id": "type:ExportTableParameter",
+      "kind": "wcf_data_contract",
+      "name": "TdmDatabaseTools.ExportTableParameter",
+      "file": "V4Kernel/src/CLR/TdmDatabaseTools/DbImportExport.cs",
+      "line_start": 24,
+      "line_end": 48,
+      "summary": "9 DataMembers, all string/short. NO KnownType, NO IExtensibleDataObject. Sql* fields carry RAW SQL on the wire by design."
+    },
+    {
+      "id": "type:ImportTableParameter",
+      "kind": "wcf_data_contract",
+      "name": "TdmDatabaseTools.ImportTableParameter",
+      "file": "V4Kernel/src/CLR/TdmDatabaseTools/DbImportExport.cs",
+      "line_start": 50,
+      "line_end": 77,
+      "summary": "11 DataMembers. One nested type via Dictionary<string, List<ColumnReplaceValue>>. NO KnownType, NO IExtensibleDataObject. Sql* fields carry RAW SQL on the wire by design."
+    },
+    {
+      "id": "type:ColumnReplaceValue",
+      "kind": "wcf_data_contract",
+      "name": "TdmDatabaseTools.ColumnReplaceValue",
+      "file": "V4Kernel/src/CLR/TdmDatabaseTools/DbImportExport.cs",
+      "line_start": 79,
+      "line_end": 88,
+      "summary": "3 string DataMembers. Leaf type — no further nesting."
+    },
+    {
+      "id": "serializer:XmlSerializerFormat_on_XmlDocument_ops",
+      "kind": "serializer_annotation",
+      "name": "[XmlSerializerFormat] on XmlDocument ops",
+      "file": "V4Kernel/src/CLR/Interfaces/NCLink_TDM/iToolingServer.cs",
+      "line_start": 38,
+      "line_end": 70,
+      "summary": "Forces XmlSerializer (strict, no polymorphism without [XmlInclude]) for all XmlDocument-carrying operations on iToolingServer and ITdmToolData."
+    },
+    {
+      "id": "serializer:DataContractSerializer_default",
+      "kind": "serializer_annotation",
+      "name": "DataContractSerializer (default)",
+      "file": "V4Kernel/src/CLR/TdmDatabaseToolsService/IDatabseImportExport.cs",
+      "line_start": 11,
+      "line_end": 41,
+      "summary": "Default for IDatabseImportExport operations carrying ExportTableParameter / ImportTableParameter. Strict, no polymorphism via xsi:type (that is NetDataContractSerializer territory; absent here)."
+    },
+    {
+      "id": "negative_finding:no_NetDataContractSerializer",
+      "kind": "absence_of_finding",
+      "name": "No NetDataContractSerializer in tree",
+      "file": "V4Kernel/src",
+      "summary": "Grep over all .cs returned zero hits. CVE-2017-9785-class gadget chain is structurally absent."
+    },
+    {
+      "id": "negative_finding:no_dangerous_formatters",
+      "kind": "absence_of_finding",
+      "name": "No BinaryFormatter / SoapFormatter / LosFormatter / ObjectStateFormatter in tree (.cs)",
+      "file": "V4Kernel/src",
+      "summary": "39 grep hits are all in .resx (VS build-time resource serialization), not runtime WCF surface."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "contract:IDatabseImportExport.ExportToFile",
+      "to": "type:ExportTableParameter",
+      "kind": "accepts_data_contract_list",
+      "note": "List<ExportTableParameter> on the wire; caller-supplied SQL inside SqlSelectCommand etc."
+    },
+    {
+      "from": "contract:IDatabseImportExport.ImportFromFile",
+      "to": "type:ImportTableParameter",
+      "kind": "accepts_data_contract_list",
+      "note": "List<ImportTableParameter> on the wire."
+    },
+    {
+      "from": "contract:IDatabseImportExport.CopyData",
+      "to": "type:ExportTableParameter",
+      "kind": "accepts_data_contract_list",
+      "note": "Plus a List<ImportTableParameter> in the same operation."
+    },
+    {
+      "from": "contract:IDatabseImportExport.CopyData",
+      "to": "type:ImportTableParameter",
+      "kind": "accepts_data_contract_list"
+    },
+    {
+      "from": "type:ImportTableParameter",
+      "to": "type:ColumnReplaceValue",
+      "kind": "nests_via_collection",
+      "note": "Dictionary<string, List<ColumnReplaceValue>>. Deepest nesting on the surface; leaf is a 3-string POCO."
+    },
+    {
+      "from": "contract:iToolingServer.SetToolingRequirements",
+      "to": "serializer:XmlSerializerFormat_on_XmlDocument_ops",
+      "kind": "uses_serializer"
+    },
+    {
+      "from": "contract:iToolingServer.SisterUpdate",
+      "to": "serializer:XmlSerializerFormat_on_XmlDocument_ops",
+      "kind": "uses_serializer"
+    },
+    {
+      "from": "contract:iToolingServer.MessageResult",
+      "to": "serializer:XmlSerializerFormat_on_XmlDocument_ops",
+      "kind": "uses_serializer"
+    },
+    {
+      "from": "contract:ITdmToolData.ToolUpdate",
+      "to": "serializer:XmlSerializerFormat_on_XmlDocument_ops",
+      "kind": "uses_serializer"
+    },
+    {
+      "from": "contract:ITdmToolData.PresetRequest",
+      "to": "serializer:XmlSerializerFormat_on_XmlDocument_ops",
+      "kind": "uses_serializer"
+    },
+    {
+      "from": "contract:ITdmToolData.UpdateNcProgramToolList",
+      "to": "serializer:XmlSerializerFormat_on_XmlDocument_ops",
+      "kind": "uses_serializer"
+    },
+    {
+      "from": "contract:IDatabseImportExport.ExportToFile",
+      "to": "serializer:DataContractSerializer_default",
+      "kind": "uses_serializer"
+    },
+    {
+      "from": "contract:IDatabseImportExport.ImportFromFile",
+      "to": "serializer:DataContractSerializer_default",
+      "kind": "uses_serializer"
+    },
+    {
+      "from": "contract:IDatabseImportExport.CopyData",
+      "to": "serializer:DataContractSerializer_default",
+      "kind": "uses_serializer"
+    }
+  ],
+  "edges_removed": [],
+  "notes": "T06 refutes the devil's-advocate B6 hypothesis (WCF deserialization pre-auth RCE): no NetDataContractSerializer, no polymorphic gadget surface, no [KnownType]. However, the IDatabseImportExport DataContracts carry RAW SQL strings on the wire by design — that's a separate concern about the design of the contract itself, not about deserialization. Worth a future trace for XXE specifically on the XmlDocument parameters: WCF's default XmlSerializerFormat reader is hardened, but downstream processing of the XmlDocument by the application may not be."
+}

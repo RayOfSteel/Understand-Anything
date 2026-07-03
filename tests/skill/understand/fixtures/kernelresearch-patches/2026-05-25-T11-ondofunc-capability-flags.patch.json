@@ -1,0 +1,105 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T11-ondofunc-capability-flags",
+  "trace_area": "T11 — Per-OnDoFunc capability-flag inventory",
+  "scope": "Negative-result inventory: every OnDoFunc body in V4Kernel/src/V4/Tls/ (84 impls across 83 files), the tlsInterpreter context object, the Machine VM context object, and the cocCALLO dispatch hop. Records the absence-of-mechanism finding F-T11.1 as graph metadata so consumers don't have to re-derive it.",
+  "source_file": "docs/security-review/traces/T11-ondofunc-capability-flags.md",
+  "nodes_added": [
+    {
+      "id": "fn:tlsInterpreter::class",
+      "kind": "class",
+      "name": "tlsInterpreter",
+      "file": "V4Kernel/src/V4/Tls/tlsInterpreter.h",
+      "line_start": 24,
+      "line_end": 102,
+      "summary": "Script-execution context object passed to every OnDoFunc as pinterpreterEvent. Members: m_point, m_sEventId, m_pobjectEvent, m_pmaskEvent, m_pobjectSoc, true/false-branch metadata, m_MsgOffType. NO call-origin field, NO capability bitmask, NO wire/wcf mode flag, NO role/identity slot. The shape itself is the negative result."
+    },
+    {
+      "id": "fn:Machine::cocCALLO_case",
+      "kind": "dispatch_case",
+      "name": "Machine::Interpret cocCALLO opcode",
+      "file": "V4Kernel/src/Products/SysTools/CoCoR/Machine.cpp",
+      "line_start": 2185,
+      "line_end": 2284,
+      "summary": "Bytecode opcode that bridges Script VM → kernel host method. Sequence: GetOutFunc(Next()) → GetCallInfo → OnDoFunc(vp, funcName, parameters, sReturnValue, bIsBoolReturnType). UNCONDITIONAL — no capability lookup, no mode consultation, no context check between opcode and host call. This is the natural single-chokepoint location for a TDMone per-script manifest gate."
+    },
+    {
+      "id": "finding:F-T11.1-no-capability-mechanism",
+      "kind": "security_finding",
+      "name": "F-T11.1 — No OnDoFunc capability-flag mechanism exists",
+      "file": "docs/security-review/traces/T11-ondofunc-capability-flags.md",
+      "line_start": 1,
+      "line_end": 999,
+      "summary": "Across 84 OnDoFunc implementations: zero gating-keyword hits in body, zero centralised capability infrastructure, no capability/role/wire/wcf/call-origin slot on tlsInterpreter, no such slot on Machine. TDMone per-script capability manifest implementation is GREEN-FIELD. Natural chokepoint for the gate: Machine.cpp:2257 (one line above the OnDoFunc call in cocCALLO)."
+    },
+    {
+      "id": "finding:F-T11.2-T02-corroborated",
+      "kind": "security_finding",
+      "name": "F-T11.2 — F-T02.2 confirmed by full-registry scan",
+      "file": "docs/security-review/traces/T11-ondofunc-capability-flags.md",
+      "line_start": 1,
+      "line_end": 999,
+      "summary": "T02's F-T02.2 framing ('the ~55 ACreateObject types are all ungated') extrapolated from five named classes. T11 confirms across all 84 OnDoFunc impls — including high-risk surfaces tlsHttp, tlsRestClient, tlsDatabase, tlsExcel, tlsPdf, tlsPython, tlsJava, tlsFtp, tlsSmtp, tlsRegistry, tlsOutlook, tlsPipe, tlsZip, tlsXml, tlsJson, tlsApp, tlsDev, tlsCode, tlsEnv, tlsDir, tlsSocket, tlsSerial, tlsWord, tlsTwain — that NONE consult any capability context."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "fn:Machine::cocCALLO_case",
+      "to": "fn:tlsSystem::OnDoFunc",
+      "kind": "dispatches_unconditionally",
+      "note": "cocCALLO calls OnDoFunc(vp, funcName, parameters, ...) at Machine.cpp:2257 with NO intervening capability/context check. tlsSystem and 83 other OnDoFunc targets are reached the same way.",
+      "file": "V4Kernel/src/Products/SysTools/CoCoR/Machine.cpp",
+      "line": 2257
+    },
+    {
+      "from": "fn:Machine::cocCALLO_case",
+      "to": "fn:tlsSoc::OnDoFunc",
+      "kind": "dispatches_unconditionally",
+      "note": "Same chokepoint as the tlsSystem edge — Machine.cpp:2257.",
+      "file": "V4Kernel/src/Products/SysTools/CoCoR/Machine.cpp",
+      "line": 2257
+    },
+    {
+      "from": "fn:Machine::cocCALLO_case",
+      "to": "fn:tlsFile::OnDoFunc",
+      "kind": "dispatches_unconditionally",
+      "note": "Same chokepoint as the tlsSystem edge — Machine.cpp:2257.",
+      "file": "V4Kernel/src/Products/SysTools/CoCoR/Machine.cpp",
+      "line": 2257
+    },
+    {
+      "from": "fn:Machine::cocCALLO_case",
+      "to": "fn:tlsThread::OnDoFunc",
+      "kind": "dispatches_unconditionally",
+      "note": "Same chokepoint as the tlsSystem edge — Machine.cpp:2257. The TerminateThread case in tlsThread::OnDoFunc would be a high-priority manifest entry.",
+      "file": "V4Kernel/src/Products/SysTools/CoCoR/Machine.cpp",
+      "line": 2257
+    },
+    {
+      "from": "finding:F-T11.1-no-capability-mechanism",
+      "to": "fn:tlsInterpreter::class",
+      "kind": "evidence_for_absence",
+      "note": "Negative-result evidence #1 — context object has no slot for the information.",
+      "file": "V4Kernel/src/V4/Tls/tlsInterpreter.h",
+      "line": 24
+    },
+    {
+      "from": "finding:F-T11.1-no-capability-mechanism",
+      "to": "fn:Machine::cocCALLO_case",
+      "kind": "evidence_for_absence",
+      "note": "Negative-result evidence #2 — dispatch hop is unconditional.",
+      "file": "V4Kernel/src/Products/SysTools/CoCoR/Machine.cpp",
+      "line": 2257
+    },
+    {
+      "from": "finding:F-T11.2-T02-corroborated",
+      "to": "finding:F-T11.1-no-capability-mechanism",
+      "kind": "derives_from",
+      "note": "F-T11.2's full-registry confirmation rests on F-T11.1's negative-mechanism result.",
+      "file": "docs/security-review/traces/T11-ondofunc-capability-flags.md",
+      "line": 1
+    }
+  ],
+  "edges_removed": [],
+  "notes": "Patch records a negative-result finding. No new OnDoFunc nodes added beyond what T02 already covers — the per-file table in the .md file is the authoritative inventory, and re-encoding all 84 impls as graph nodes would duplicate registry presence already captured indirectly via tlsBase::ACreateObject (T02). Edges from cocCALLO to four representative OnDoFunc targets demonstrate the unconditional-dispatch pattern; the same edge type applies to all 84. F-T11.1 marks the TDMone per-script manifest as green-field; the natural chokepoint is Machine.cpp:2257."
+}

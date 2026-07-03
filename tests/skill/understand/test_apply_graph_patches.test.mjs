@@ -155,3 +155,212 @@ describe('apply-graph-patches.mjs — reclassification and llm default', () => {
     expect(result.status).toBe(1);
   });
 });
+
+describe('apply-graph-patches.mjs — patch application', () => {
+  const patchMeta = { title: 't', rationale: 'r', created: '2026-07-03' };
+
+  it('adds a new edge with manual provenance and normalized direction', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'a-add.patch.json': {
+          _meta: patchMeta,
+          edges_to_add: [
+            {
+              source: 'file:a.cs', target: 'file:b.cs', type: 'imports',
+              direction: 'outgoing', weight: 1.0, note: 'hand-verified include',
+            },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.graph.edges).toHaveLength(1);
+    const e = r.graph.edges[0];
+    expect(e.origin).toBe('manual');
+    expect(e.ruleId).toBe('a-add.patch.json');
+    expect(e.confidence).toBe(1.0);
+    expect(e.evidence).toBe('hand-verified include');
+    expect(e.direction).toBe('forward');
+  });
+
+  it('upgrades an existing edge instead of duplicating, keeping description and weight', () => {
+    const r = runScript({
+      graph: makeGraph([edge({ origin: 'llm', description: 'llm said so', weight: 0.4 })]),
+      patches: {
+        'a-add.patch.json': {
+          _meta: patchMeta,
+          edges_to_add: [
+            { source: 'file:a.cs', target: 'file:b.cs', type: 'imports', note: 'confirmed' },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.graph.edges).toHaveLength(1);
+    const e = r.graph.edges[0];
+    expect(e.origin).toBe('manual');
+    expect(e.ruleId).toBe('a-add.patch.json');
+    expect(e.description).toBe('llm said so');
+    expect(e.weight).toBe(0.4);
+    expect(e.evidence).toBe('confirmed');
+  });
+
+  it('manual upgrade also overrides a structural stamp (priority invariant)', () => {
+    const r = runScript({
+      graph: makeGraph([edge()]),
+      importMap: { 'a.cs': ['b.cs'] },
+      patches: {
+        'a-add.patch.json': {
+          _meta: patchMeta,
+          edges_to_add: [
+            { source: 'file:a.cs', target: 'file:b.cs', type: 'imports', note: 'human says yes' },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.graph.edges[0].origin).toBe('manual');
+  });
+
+  it('removes matching edges across all directions and type aliases', () => {
+    const r = runScript({
+      graph: makeGraph([
+        edge({ direction: 'forward' }),
+        edge({ direction: 'bidirectional' }),
+        edge({ type: 'calls' }),
+      ]),
+      patches: {
+        'b-remove.patch.json': {
+          _meta: patchMeta,
+          edges_to_remove: [
+            { source: 'file:a.cs', target: 'file:b.cs', type: 'import', reason: 'misrouted' },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    // "import" alias → imports; both direction variants removed, calls kept.
+    expect(r.graph.edges).toHaveLength(1);
+    expect(r.graph.edges[0].type).toBe('calls');
+  });
+
+  it('skips entries with unknown nodes but applies the rest (per-item resilience)', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'c-mixed.patch.json': {
+          _meta: patchMeta,
+          edges_to_add: [
+            { source: 'file:ghost.cs', target: 'file:b.cs', type: 'imports' },
+            { source: 'file:a.cs', target: 'file:b.cs', type: 'imports' },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('Warning: apply-graph-patches:');
+    expect(r.graph.edges).toHaveLength(1);
+    expect(r.graph.edges[0].source).toBe('file:a.cs');
+  });
+
+  it('skips a broken patch file with a warning and still applies later files', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'a-broken.patch.json': '{ not json',
+        'b-good.patch.json': {
+          _meta: patchMeta,
+          edges_to_add: [{ source: 'file:a.cs', target: 'file:b.cs', type: 'imports' }],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('Warning: apply-graph-patches: skipping patch a-broken.patch.json');
+    expect(r.graph.edges).toHaveLength(1);
+  });
+
+  it('skips a patch file without _meta.title', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'a-no-meta.patch.json': {
+          edges_to_add: [{ source: 'file:a.cs', target: 'file:b.cs', type: 'imports' }],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.stderr).toContain('missing _meta.title');
+    expect(r.graph.edges).toHaveLength(0);
+  });
+
+  it('processes files alphabetically with removes before adds per file', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        // Within one file: remove is a no-op, then add creates the edge.
+        'a-first.patch.json': {
+          _meta: patchMeta,
+          edges_to_remove: [{ source: 'file:a.cs', target: 'file:b.cs', type: 'imports', reason: 'reset' }],
+          edges_to_add: [{ source: 'file:a.cs', target: 'file:b.cs', type: 'imports' }],
+        },
+        // Later file removes what the earlier one added → net: gone.
+        'z-last.patch.json': {
+          _meta: patchMeta,
+          edges_to_remove: [{ source: 'file:a.cs', target: 'file:b.cs', type: 'imports', reason: 'retracted' }],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.graph.edges).toHaveLength(0);
+  });
+
+  it('is idempotent: applying twice yields byte-identical output', () => {
+    const r = runScript({
+      graph: makeGraph([edge(), edge({ type: 'calls' })]),
+      importMap: { 'a.cs': ['b.cs'] },
+      patches: {
+        'a-add.patch.json': {
+          _meta: patchMeta,
+          edges_to_add: [
+            { source: 'file:a.cs', target: 'file:b.cs', type: 'depends_on', note: 'n' },
+          ],
+          edges_to_remove: [
+            { source: 'file:b.cs', target: 'file:a.cs', type: 'imports', reason: 'x' },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    const firstRun = readFileSync(r.graphPath, 'utf-8');
+    const scanPath = join(r.root, 'scan-result.json');
+    const patchDir = join(r.root, 'patches');
+    const second = spawnSync(
+      'node',
+      [SCRIPT, r.graphPath, '--scan-result', scanPath, '--patches', patchDir],
+      { encoding: 'utf-8' },
+    );
+    expect(second.status).toBe(0);
+    const secondRun = readFileSync(r.graphPath, 'utf-8');
+    expect(secondRun).toBe(firstRun);
+  });
+
+  it('accepts all 15 real KernelResearch patch files at format level', () => {
+    const fixtureDir = resolve(__dirname, 'fixtures/kernelresearch-patches');
+    const r = runScript({ graph: makeGraph([]) , patches: {} });
+    roots.push(r.root);
+    const result = spawnSync(
+      'node',
+      [SCRIPT, r.graphPath, '--patches', fixtureDir],
+      { encoding: 'utf-8' },
+    );
+    expect(result.status).toBe(0);
+    // Node-level skips are expected (this synthetic graph lacks the nodes),
+    // but no file may be rejected at format level.
+    expect(result.stderr).not.toContain('skipping patch');
+    expect(result.stderr).toContain('patchFiles=15');
+  });
+});

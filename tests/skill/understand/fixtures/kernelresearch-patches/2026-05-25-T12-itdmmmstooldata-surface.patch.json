@@ -1,0 +1,240 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T12-itdmmmstooldata-surface",
+  "trace_area": "T12 — ITdmMmsToolData operation surface",
+  "scope": "Function-level nodes and edges for the 11 active [OperationContract]s on ITdmMmsToolData co-hosted with ITdmToolData in TdmToolData.cs. Per docs/security-review/traces/T12-itdmmmstooldata-surface.md: zero of the 11 ops queue scripts via dictMsgIdTplScrParamList.TryAdd, so none extend the wire-driven SQLi spine from T01.",
+  "source_file": "docs/security-review/traces/T12-itdmmmstooldata-surface.md",
+  "nodes_added": [
+    {
+      "id": "iface:ITdmMmsToolData",
+      "kind": "service_contract",
+      "name": "ITdmMmsToolData",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/ITdmMmsToolData.cs",
+      "line_start": 11,
+      "line_end": 91,
+      "summary": "TDM-internal WCF ServiceContract co-hosted with ITdmToolData on TdmMmsToolDataService. 11 active [OperationContract]s + 3 commented out. No [FaultContract] decorations; all ops report via short return + ref string sExceptionMsg."
+    },
+    {
+      "id": "iface:IMmsToolData",
+      "kind": "service_contract",
+      "name": "IMmsToolData (duplex callback)",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/Interface/IMmsToolData.cs",
+      "line_start": 10,
+      "line_end": 68,
+      "summary": "Fastems contract for TDM-as-client → MMS-as-server direction. Used as the duplex callback channel; TdmToolData stores per-system callback proxies in dictMmsNameCallback and pushes outbound messages."
+    },
+    {
+      "id": "fn:TdmToolData::MMSSetToolNominals",
+      "kind": "function",
+      "name": "TdmToolData::MMSSetToolNominals",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1067,
+      "line_end": 1153,
+      "summary": "ITdmMmsToolData [OperationContract]. Parses sToolNominals string into XmlDocument (line 1099) and forwards outbound to MMS client via dictMmsNameCallback[sMmsSystemName].SetToolNominals (line 1121). Does NOT call CallScript or queue into dictMsgIdTplScrParamList."
+    },
+    {
+      "id": "fn:TdmToolData::MMSSetNcProgramToolList",
+      "kind": "function",
+      "name": "TdmToolData::MMSSetNcProgramToolList",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1155,
+      "line_end": 1241,
+      "summary": "ITdmMmsToolData [OperationContract]. Parses sNcProgramToolList into XmlDocument (line 1187) and forwards outbound to MMS client via dictMmsNameCallback[sMmsSystemName].SetNcProgramToolList (line 1208). No script dispatch."
+    },
+    {
+      "id": "fn:TdmToolData::MMSSetSisterTool",
+      "kind": "function",
+      "name": "TdmToolData::MMSSetSisterTool",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1243,
+      "line_end": 1329,
+      "summary": "ITdmMmsToolData [OperationContract]. Parses sSisterTool into XmlDocument (line 1275) and forwards outbound to MMS client via dictMmsNameCallback[sMmsSystemName].SetSisterTool (line 1296). No script dispatch."
+    },
+    {
+      "id": "fn:TdmToolData::MMSSetToolActuals",
+      "kind": "function",
+      "name": "TdmToolData::MMSSetToolActuals",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1331,
+      "line_end": 1417,
+      "summary": "ITdmMmsToolData [OperationContract]. Parses sToolActuals into XmlDocument (line 1363) and forwards outbound to MMS client via dictMmsNameCallback[sMmsSystemName].SetToolActuals (line 1384). No script dispatch."
+    },
+    {
+      "id": "fn:TdmToolData::GetConnectedMmsSystem",
+      "kind": "function",
+      "name": "TdmToolData::GetConnectedMmsSystem",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1419,
+      "line_end": 1445,
+      "summary": "ITdmMmsToolData [OperationContract]. Returns dictMmsNameCallback.Keys.ToList() (line 1428). Pure in-memory state, no wire→DB or wire→script path."
+    },
+    {
+      "id": "fn:TdmToolData::IsMessageAccepted",
+      "kind": "function",
+      "name": "TdmToolData::IsMessageAccepted",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1447,
+      "line_end": 1499,
+      "summary": "ITdmMmsToolData [OperationContract]. Looks up messageID in dictMsgIdTplAcceptText (line 1457). Pure in-memory state, no wire→DB or wire→script path."
+    },
+    {
+      "id": "fn:TdmToolData::GenerateMsgID",
+      "kind": "function",
+      "name": "TdmToolData::GenerateMsgID",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1501,
+      "line_end": 1525,
+      "summary": "ITdmMmsToolData [OperationContract]. Pops and returns first entry from lstMsgPool (lines 1510-1511). Pure in-memory state, no wire→DB or wire→script path."
+    },
+    {
+      "id": "fn:TdmToolData::StartServiceLog",
+      "kind": "function",
+      "name": "TdmToolData::StartServiceLog",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1527,
+      "line_end": 1560,
+      "summary": "ITdmMmsToolData [OperationContract]. Calls File.CreateText(sLogFileName) at line 1545 with wire-controlled path. Validation is only Path.GetDirectoryName != \"\" (line 1539); UNC, traversal, and system paths are accepted. LocalSystem write primitive — see F-T12.2. No script dispatch."
+    },
+    {
+      "id": "fn:TdmToolData::StopServiceLog",
+      "kind": "function",
+      "name": "TdmToolData::StopServiceLog",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1562,
+      "line_end": 1587,
+      "summary": "ITdmMmsToolData [OperationContract]. Closes the log file handle. No wire parameter, no script dispatch."
+    },
+    {
+      "id": "fn:TdmToolData::SetLogLevel",
+      "kind": "function",
+      "name": "TdmToolData::SetLogLevel",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1589,
+      "line_end": 1610,
+      "summary": "ITdmMmsToolData [OperationContract]. byte.Parse(sLogLevel) at line 1596. No script dispatch, no file/DB path."
+    },
+    {
+      "id": "fn:TdmToolData::GetLogLevel",
+      "kind": "function",
+      "name": "TdmToolData::GetLogLevel",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line_start": 1612,
+      "line_end": 1627,
+      "summary": "ITdmMmsToolData [OperationContract]. Returns current logLevel. No wire parameter, no script dispatch."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "fn:TdmToolData::MMSSetToolNominals",
+      "to": "iface:IMmsToolData",
+      "kind": "wcf_duplex_callback",
+      "note": "dictMmsNameCallback[sMmsSystemName].SetToolNominals(messageID, xmlToolNominals) — outbound to connected MMS client, not into TdmSkriptPlus/SQL.",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 1121
+    },
+    {
+      "from": "fn:TdmToolData::MMSSetNcProgramToolList",
+      "to": "iface:IMmsToolData",
+      "kind": "wcf_duplex_callback",
+      "note": "dictMmsNameCallback[sMmsSystemName].SetNcProgramToolList(messageID, xmlNcProgramToolList) — outbound to connected MMS client.",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 1208
+    },
+    {
+      "from": "fn:TdmToolData::MMSSetSisterTool",
+      "to": "iface:IMmsToolData",
+      "kind": "wcf_duplex_callback",
+      "note": "dictMmsNameCallback[sMmsSystemName].SetSisterTool(messageID, sisterTool) — outbound to connected MMS client.",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 1296
+    },
+    {
+      "from": "fn:TdmToolData::MMSSetToolActuals",
+      "to": "iface:IMmsToolData",
+      "kind": "wcf_duplex_callback",
+      "note": "dictMmsNameCallback[sMmsSystemName].SetToolActuals(messageID, xmlToolActuals) — outbound to connected MMS client.",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 1384
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::MMSSetToolNominals",
+      "kind": "implements",
+      "note": "TdmToolData : ITdmToolData, ITdmMmsToolData — class implements both contracts.",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::MMSSetNcProgramToolList",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::MMSSetSisterTool",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::MMSSetToolActuals",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::GetConnectedMmsSystem",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::IsMessageAccepted",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::GenerateMsgID",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::StartServiceLog",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::StopServiceLog",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::SetLogLevel",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    },
+    {
+      "from": "iface:ITdmMmsToolData",
+      "to": "fn:TdmToolData::GetLogLevel",
+      "kind": "implements",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 25
+    }
+  ],
+  "edges_removed": [],
+  "notes": "Resolves the T04 Open question 'ITdmMmsToolData operation count and surface'. Verdict F-T12.1: zero of the 11 ITdmMmsToolData operations queue scripts via dictMsgIdTplScrParamList.TryAdd; the WCF→script enqueue sites in TdmToolData.cs (lines 589/641/698/817/982) are all inside ITdmToolData operations. The 4 MMSSet* operations forward wire-controlled XML strings outbound through the IMmsToolData duplex callback channel rather than into TdmSkriptPlus. F-T12.2 (StartServiceLog arbitrary-file-write under LocalSystem) and F-T12.3 (MMSSet* outbound poisoning primitive) are non-SQLi findings recorded for the rewrite. Three commented-out [OperationContract]s (MMSConnect, MMSDisconnect, MessageResult) are not enumerated as active surface today."
+}

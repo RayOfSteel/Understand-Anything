@@ -1,0 +1,95 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T10-cocformat-wire-reachability",
+  "trace_area": "T10 — cocFORMAT wire reachability (resolves F-T03.3 open question)",
+  "scope": "Determine whether any shipped TDM-Skript script reaches the cocFORMAT runtime varargs primitive (Machine.cpp CString::Format / _stprintf_s) with a wire-controlled format string. Method: identify the only cocFORMAT-emission site in the compiler, census every call site in Application/src/scr and Custom/, classify each format-string source, and apply the wire-reach test.",
+  "source_file": "docs/security-review/traces/T10-cocformat-wire-reachability.md",
+  "nodes_added": [
+    {
+      "id": "fn:Parser::Factor_emit_cocFORMAT",
+      "kind": "function",
+      "name": "TDM-Skript Parser::Factor — sole cocFORMAT emission site",
+      "file": "V4Kernel/src/Products/SocP/TDM_Compiler/TDM.atg",
+      "line_start": 1131,
+      "line_end": 1158,
+      "summary": "Coco/R grammar fragment. cocFORMAT is emitted ONLY when a Factor matches the optional prefix `< Value >` before its inner Value. The generated parser (Parser.cpp:1180-1215 in both the SocP/TDM_Compiler and SysTools/CoCoR trees) materializes this as `if (la->kind == 34) { format = true; Get(); Value(isString); Expect(35); } ... if (format) gen->Emit(cocFORMAT)`. There is NO other Emit(cocFORMAT) call site in either compiler tree."
+    },
+    {
+      "id": "op:cocFORMAT_handler",
+      "kind": "vm_opcode_handler",
+      "name": "cocFORMAT runtime — Machine.cpp",
+      "file": "V4Kernel/src/Products/SysTools/CoCoR/Machine.cpp",
+      "line_start": 2084,
+      "line_end": 2133,
+      "summary": "Pops `d` (numeric) and the format-string buffer slot. Classifies by trailing chars: 'lf'→type0(double), 'ld'→type1(long), 'f'→type2(float), 'd'→type3(int) all dispatched through _stprintf_s; anything else→type4 which pops a string-buffer address and runs MFC `CString::Format(fmt, append.c_str())` — the varargs primitive F-T03.3 calls out. Either branch is a format-string consumer."
+    },
+    {
+      "id": "scr:_brtBanfReportWriteFile_sFormatPrice",
+      "kind": "script_construction_site",
+      "name": "_brtBanfReportWriteFile.scp — sFormatPrice construction",
+      "file": "Application/src/scr/brt/_brtBanfReportWriteFile.scp",
+      "line_start": 411,
+      "line_end": 419,
+      "summary": "Builds sFormatPrice = \"%0.\" + env(\"TMS_UNITTRAILDIGITS\") + \"f\" (line 418) when the env-var is set, else \"%0.2f\" (line 414). Consumed at lines 775, 777 as `<sFormatPrice> dNetPrice` — the only non-literal cocFORMAT format-string source in the entire shipped + bundled catalog. The forced `f` trailer pins the runtime type-classifier to type-2 (_stprintf_s with float arg), denying access to the type-4 CString::Format varargs branch even under hypothetical env-var injection."
+    },
+    {
+      "id": "scr:_brtBanfReportWriteFile_main",
+      "kind": "script_entry",
+      "name": "_brtBanfReportWriteFile.scp main()",
+      "file": "Application/src/scr/brt/_brtBanfReportWriteFile.scp",
+      "line_start": 258,
+      "line_end": 258,
+      "summary": "main(sTargetFileName, sDataObject, sListPosObject, sTableColumsObject, Costunit, Workplace, Addressnr, ReportId). Eight parameters. None flow into sFormatPrice. Per header @Calling-position (line 7), reached via STO Email Reporting Service — i.e. via the F-T07.4 DB-driven dispatcher in _stoStartReportService.scr:270 where _Script comes from sqlReport[i][SCRIPTNAME]. Second-order wire-reach only."
+    }
+  ],
+  "edges_added": [
+    {
+      "src": "fn:Parser::Factor_emit_cocFORMAT",
+      "dst": "op:cocFORMAT_handler",
+      "kind": "emits_opcode",
+      "annotation": "The `<Value>Value` script-source syntax compiles to a single cocFORMAT opcode that executes the format primitive at runtime."
+    },
+    {
+      "src": "scr:_brtBanfReportWriteFile_sFormatPrice",
+      "dst": "op:cocFORMAT_handler",
+      "kind": "consumes_at_runtime",
+      "annotation": "Lines 775 and 777 — the only non-literal cocFORMAT call sites in shipped scripts. Format-string source classified as env-var-derived; type classifier pins to type-2 because the construction forces an `f` trailer."
+    },
+    {
+      "src": "scr:_brtBanfReportWriteFile_main",
+      "dst": "scr:_brtBanfReportWriteFile_sFormatPrice",
+      "kind": "script_dataflow",
+      "annotation": "None of the 8 main() parameters flow into sFormatPrice. The variable is sourced exclusively from env(\"TMS_UNITTRAILDIGITS\"), which is a system-config setting not reachable from any T04 WCF op."
+    }
+  ],
+  "node_annotations": [
+    {
+      "id": "op:cocFORMAT_handler",
+      "annotation": "Wire reachability: NOT PROVEN in shipped catalog. T10 census of Application/src/scr + Custom/ found 27 call sites — 25 with pure-literal format strings (wire-reach impossible by construction), 2 with a script-local variable as format string (both in _brtBanfReportWriteFile.scp, both fed by env-var TMS_UNITTRAILDIGITS, both pinned to type-2 by forced `f` trailer). F-T03.3 stays at 'service-crash for malicious script author'."
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-T10.1",
+      "title": "cocFORMAT wire reachability not present in shipped catalog — F-T03.3 stays as service-crash for malicious script author",
+      "verdict": "confirmed",
+      "severity": "informational",
+      "summary": "Censused every cocFORMAT call site in Application/src/scr and Custom/. 27 sites total: 25 pure-literal (wire-reach impossible), 2 non-literal (_brtBanfReportWriteFile.scp:775,777) fed by env(TMS_UNITTRAILDIGITS) which is neither a main() param nor reachable from T04 WCF ops. Even under hypothetical env-var injection the construction \"%0.\" + INJECT + \"f\" pins the runtime type-classifier to type-2 (_stprintf_s with float arg), denying the dangerous type-4 CString::Format varargs branch. M8 does NOT promote.",
+      "upgrades": ["F-T03.3 'wire reachability not proven' → resolved as 'wire reachability not present in shipped catalog'"]
+    },
+    {
+      "id": "F-T10.2",
+      "title": "Defensive recommendation — sanitize digits in sFormatPrice env-var construction",
+      "verdict": "advisory",
+      "severity": "low",
+      "summary": "_brtBanfReportWriteFile.scp:418 is the only build-format-string-from-env-var shape in the shipped catalog. Self-defending today (forced `f` trailer), but brittle to refactor. Change to `\"%0.\" + sanitize_digits(env(\"TMS_UNITTRAILDIGITS\")) + \"f\"` to make the safety explicit. Independent of the F-T03.3 kernel-side fix."
+    },
+    {
+      "id": "F-T10.3",
+      "title": "Script-source msg->Info/Error/Warning/Debug and tlsFormatStr/->Format calls do NOT compile to cocFORMAT",
+      "verdict": "confirmed",
+      "severity": "informational",
+      "summary": "The compiler emits cocFORMAT only from the `<Value>Value` Factor prefix (TDM.atg:1138). The 267 `msg->(...)('$...')` hits in the script corpus are cocCALLO host-call invocations; their $VAR interpolation is handled by the TDM-Skript preprocessor before the string reaches any formatter. This clarifies T03's framing — F-T03.3 is about cocFORMAT specifically, not about all script-source format-like calls. A separate question (whether the kernel-side msg->Error / OnTrace / tlsFormatStr implementations themselves call into a varargs format primitive with the script-supplied string in the format position) is logged as a T10 open question."
+    }
+  ]
+}

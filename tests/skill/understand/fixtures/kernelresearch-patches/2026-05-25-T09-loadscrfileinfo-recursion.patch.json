@@ -1,0 +1,106 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T09-loadscrfileinfo-recursion",
+  "trace_area": "T09 — LoadScrFileInfo recursion / symlink handling",
+  "scope": "Resolve the F-T05.4 Open question: read LoadScrFileInfo and its underlying tlsDir walker in full, determine recursion depth, reparse-point filtering, and whether the m_lfileinfoScr cache acts as a strict allowlist or merely a hint. Cross-check the parallel LoadMskFileInfo for divergent behaviour.",
+  "source_file": "docs/security-review/traces/T09-loadscrfileinfo-recursion.md",
+  "nodes_added": [
+    {
+      "id": "fn:tlsEnv::LoadScrFileInfo",
+      "kind": "function",
+      "name": "tlsEnv::LoadScrFileInfo()",
+      "file": "V4Kernel/src/V4/Tls/tlsEnv.cpp",
+      "line_start": 7304,
+      "line_end": 7379,
+      "summary": "Builds m_lfileinfoScr from TMS_SCR. Splits the env-var on ';' into a path list, shards across up to 4 worker threads, and invokes tlsDir::Init(path, '*', '.;..', FALSE, 0) on each shard. The 4th positional arg (bWithSubDir) is the literal FALSE in both call sites (lines 7338, 7352) — recursion is hardcoded off. The 6th arg (FileInfoFlags=0) requests only PathFileName. Filter is '*' (all extensions); the dead-code comment at lines 7370-7378 shows the original *.scp;*.scr;*.py restriction was intentionally widened. No reparse-point handling at this layer."
+    },
+    {
+      "id": "fn:tlsDir::Init",
+      "kind": "function",
+      "name": "tlsDir::Init(const TCHAR* PathList, const tstring& sFilterList, const tstring& sIgnoreFilterList, short bWithSubDir, short FileInfoFlags)",
+      "file": "V4Kernel/src/V4/Tls/tlsDir.cpp",
+      "line_start": 711,
+      "line_end": 740,
+      "summary": "Generic directory-walker entry. Stores bWithSubDir into m_bWithSubDir (line 716) and delegates to CreateFileList. bWithSubDir is the SOLE recursion gate; there is no defaults-or-overrides logic that could override a caller's FALSE."
+    },
+    {
+      "id": "fn:tlsDir::CreateFileList",
+      "kind": "function",
+      "name": "tlsDir::CreateFileList(sPath, FileInfoFlags) — recursive helper",
+      "file": "V4Kernel/src/V4/Tls/tlsDir.cpp",
+      "line_start": 240,
+      "line_end": 368,
+      "summary": "FindFirstFileEx (FindExInfoBasic, FindExSearchNameMatch/LimitToDirectories, dwAdditionalFlags=0) + FindNextFile loop. Per-entry: calls tlsFile::GetFileInfo at line 276, runs ignore-filter regex, push_back to m_lfileinfoFiles. Recursion fires ONLY at lines 345-358 when m_bWithSubDir is TRUE AND the entry is a directory AND the name doesn't start with '.'. setDirSearched cycle-breaker exists only on the recursion path. NO check on FILE_ATTRIBUTE_REPARSE_POINT — junction-directories enumerated transparently by Win32 are walked as if they were normal directories."
+    },
+    {
+      "id": "fn:tlsFile::GetFileInfo_winfind",
+      "kind": "function",
+      "name": "tlsFile::GetFileInfo(tlsFileInfo&, WIN32_FIND_DATA*, sPath, sPathFileName, InfoFlags)",
+      "file": "V4Kernel/src/V4/Tls/tlsFile.cpp",
+      "line_start": 6432,
+      "line_end": 6620,
+      "summary": "Populates a tlsFileInfo from a WIN32_FIND_DATA. Extracts FILE_ATTRIBUTE_REPARSE_POINT at line 6480 into local `a9`, but `a9` is consumed exclusively at line 6538 to format a 13-digit decorative FileAttributes string. The reparse bit never gates fileinfo.Flags, never short-circuits the return, and is not consulted by tlsDir::CreateFileList. Only FILE_ATTRIBUTE_DIRECTORY influences a usable flag (Flags |= 1 at line 6494)."
+    },
+    {
+      "id": "fn:tlsEnv::LoadMskFileInfo",
+      "kind": "function",
+      "name": "tlsEnv::LoadMskFileInfo()",
+      "file": "V4Kernel/src/V4/Tls/tlsEnv.cpp",
+      "line_start": 7117,
+      "line_end": 7139,
+      "summary": "TMS_MSK parallel to LoadScrFileInfo, with a critical divergence: reads env-var SYS_READMASKFROMDIR (lines 7128-7129) and passes its value as bWithSubDir to tlsDir::Init (line 7136). If SYS_READMASKFROMDIR is set non-zero in deployment, the TMS_MSK walker recurses into subdirectories AND silently follows junction-directories inside the TMS_MSK tree. Reparse-point filtering still absent. Filter is '*' (all extensions). Single-threaded (no worker sharding like LoadScrFileInfo)."
+    }
+  ],
+  "edges_added": [
+    {
+      "src": "fn:tlsEnv::LoadScrFileInfo",
+      "dst": "fn:tlsDir::Init",
+      "kind": "calls",
+      "annotation": "bWithSubDir=FALSE (hardcoded), filter='*', ignoreFilter='.;..', FileInfoFlags=0. Worker-thread sharding (up to 4 threads, joined at line 7357)."
+    },
+    {
+      "src": "fn:tlsDir::Init",
+      "dst": "fn:tlsDir::CreateFileList",
+      "kind": "calls",
+      "annotation": "Delegate; CreateFileList(short FileInfoFlags) iterates m_lsPathList then calls CreateFileList(sPath, FileInfoFlags) per segment."
+    },
+    {
+      "src": "fn:tlsDir::CreateFileList",
+      "dst": "fn:tlsFile::GetFileInfo_winfind",
+      "kind": "calls",
+      "annotation": "Per-FindNextFile entry, line 276. Filters happen after the call, not before — reparse-bit information is available but discarded."
+    },
+    {
+      "src": "fn:tlsEnv::GetScrFileInfo",
+      "dst": "fn:tlsEnv::LoadScrFileInfo",
+      "kind": "lazy_init",
+      "annotation": "Line 7402: if(m_lfileinfoScr.empty()) LoadScrFileInfo(). Same lazy-init at GetScrFileInfoList line 7471."
+    },
+    {
+      "src": "fn:tlsEnv::LoadMskFileInfo",
+      "dst": "fn:tlsDir::Init",
+      "kind": "calls",
+      "annotation": "bWithSubDir=SYS_READMASKFROMDIR (configurable). If env var set non-zero, walker recurses unbounded AND silently follows junction-directories."
+    }
+  ],
+  "node_annotations": [
+    {
+      "id": "fn:tlsEnv::GetScrFileInfo",
+      "annotation": "Strict allowlist. Returns FALSE on cache-miss with no Win32 fallback. Directory entries skipped at line 7429 (if pos->Flags & 1 continue) — this is what filters junction-DIRECTORIES out of resolution even though the walker doesn't filter them out of the cache."
+    },
+    {
+      "id": "fn:tlsFile::GetPathIfExists",
+      "annotation": "TMS_SCR/TMS_MSK branches (lines 5720-5735) consult the env cache only; all other env-vars (else branch at line 5736) iterate path list with raw Exists() = FindFirstFile. F-T05.3's traversal exposure lives in the else branch; F-T05.4's cache-bounding lives in the TMS_SCR/TMS_MSK branches and is confirmed by T09."
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-T09.1",
+      "title": "LoadScrFileInfo enumerates TMS_SCR roots top-level only, with no reparse-point filtering, and feeds a strict allowlist — F-T05.4's cache-bound assumption holds",
+      "verdict": "confirmed",
+      "severity": "low",
+      "summary": "Recursion is hardcoded off (bWithSubDir=FALSE at tlsEnv.cpp:7338,7352); the walker's recursion branch at tlsDir.cpp:345 is unreachable. Reparse-point status is recorded as a decorative attribute string (tlsFile.cpp:6480,6538) but never enforced. Junction-DIRECTORIES at the TMS_SCR top level are skipped by the resolver only because they happen to also carry FILE_ATTRIBUTE_DIRECTORY (filtered at tlsEnv.cpp:7429). The cache acts as a strict allowlist: tlsFile.cpp:5728-5735 routes TMS_SCR resolution through GetScrFileInfo with no Win32 fallback. Attacker-supplied script-names with ../ traversal cannot escape the indexed TMS_SCR tree.",
+      "upgrades": ["F-T05.4 from 'Partial — pending recursion check' to 'Confirmed — cache-bounded'"]
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "_meta": {
+    "title": "Wire C# entry points through to the CoCoR grammar callbacks",
+    "rationale": "Closes the cross-language gap from C# (ToolingServer.cs / TdmToolData.cs InitClrTmsInterface) down through the C++/CLI bridge (TmsNCLink) into the unmanaged interpreter (tlsSoc -> tlsSocP -> tlsbSocP -> cocInterpreter). InitClrTmsInterface itself only constructs TmsNCLink + Init; the actual script-execution path is InitClrTmsInterface (lifecycle) + ExecuteScriptThread -> TmsNCLink::CallScript -> tlsSoc::Exec -> tlsSocP::Exec, which then drives the CocoR-generated Parser's gen->On* callbacks. The clrTdmScript.cpp file is a SEPARATE managed wrapper that reaches tlsSocP directly via OnDeclare — recorded as a parallel edge, not a sequel.",
+    "created": "2026-05-25",
+    "follow_up_to": "2026-05-25-cocor-callback-chain.patch.json"
+  },
+  "edges_to_remove": [],
+  "edges_to_add": [
+    {
+      "source": "function:V4Kernel/src/CLR/NCLinkService/ToolingServer.cs:InitClrTmsInterface",
+      "target": "function:V4Kernel/src/V4/ClrTmsInterface/TmsNCLink.cpp:TmsNCLink",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "new TmsNCLink() + tmsnclink.Init(sIniFileName, 2) — bootstraps the unmanaged TDM workspace"
+    },
+    {
+      "source": "function:V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs:InitClrTmsInterface",
+      "target": "function:V4Kernel/src/V4/ClrTmsInterface/TmsNCLink.cpp:TmsNCLink",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "new TmsNCLink() + tmsnclink.Init(sIniFileName, 4) — bootstraps the unmanaged TDM workspace"
+    },
+    {
+      "source": "function:V4Kernel/src/CLR/NCLinkService/ToolingServer.cs:ExecuteScriptThread",
+      "target": "function:V4Kernel/src/V4/ClrTmsInterface/TmsNCLink.cpp:TmsNCLink",
+      "type": "depends_on",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "Calls tmsnclink.CallScript(sScrName, alParams, ref sResult) — the runtime entry into the CoCoR pipeline"
+    },
+    {
+      "source": "function:V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs:ExecuteScriptThread",
+      "target": "function:V4Kernel/src/V4/ClrTmsInterface/TmsNCLink.cpp:TmsNCLink",
+      "type": "depends_on",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "Calls tmsnclink.CallScript(sScrName, alParams, ref sResult) — the runtime entry into the CoCoR pipeline"
+    },
+    {
+      "source": "file:V4Kernel/src/V4/ClrTmsInterface/TmsNCLink.cpp",
+      "target": "function:V4Kernel/src/V4/Tls/tlsSoc.cpp:tlsSoc",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "TmsNCLink::CallScript constructs `tlsSoc pSoc(...)` on the stack to host one script invocation"
+    },
+    {
+      "source": "file:V4Kernel/src/V4/ClrTmsInterface/TmsNCLink.cpp",
+      "target": "function:V4Kernel/src/V4/Tls/tlsSoc.cpp:Exec",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "pSoc.Exec(vsParaVal, sReturnValue, bStringType) — runs the script and reads `_Result` back"
+    },
+    {
+      "source": "function:V4Kernel/src/V4/Tls/tlsSoc.cpp:Exec",
+      "target": "function:V4Kernel/src/V4/Tls/tlsSocP.cpp:Exec",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "tlsSoc::Exec dispatches via m_pinterpreter — when type==tlsInterpreterTypeSocP, calls ((tlsSocP*)m_pinterpreter)->Exec (tlsSoc.cpp:466)"
+    },
+    {
+      "source": "function:V4Kernel/src/V4/Tls/tlsSoc.cpp:tlsSoc",
+      "target": "function:V4Kernel/src/V4/Tls/tlsSocP.cpp:tlsSocP",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "tlsSoc constructor factory-creates m_pinterpreter = new tlsSocP(sId, sProgram, ...) (tlsSoc.cpp:263)"
+    },
+    {
+      "source": "function:V4Kernel/src/V4/Tls/tlsSocP.cpp:Exec",
+      "target": "function:V4Kernel/src/Products/SocP/TDM_Compiler/cocInterpreter.cpp:Parse",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "tlsSocP::Exec inherits from cocInterpreter — invokes Parse() (which runs the CoCoR grammar) then Interpret() (which runs the bytecode VM, firing On* callbacks)"
+    },
+    {
+      "source": "file:V4Kernel/src/V4/ClrTmsInterface/clrTdmScript.cpp",
+      "target": "file:V4Kernel/src/V4/Tls/tlsSocP.cpp",
+      "type": "calls",
+      "direction": "outgoing",
+      "weight": 1.0,
+      "note": "clrTdmScript.cpp:517 calls ((tlsSocP*)pSoc.GetInterpreter())->OnDeclare(...) directly to inject clrScriptObjects from .NET — a PARALLEL managed entry, separate from the TmsNCLink path. (OnDeclare not yet extracted as its own node; file-level edge until next /understand re-run)"
+    }
+  ]
+}

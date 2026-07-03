@@ -1,0 +1,141 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T04-wcf-entry-surface",
+  "trace_area": "T04 — WCF entry surface",
+  "scope": "Complete enumeration of every WCF service host, service contract, operation contract, binding configuration, and installer service-account default in V4Kernel/src. Captures two hosts the prior review missed (TdmAcmNCLinkService, TdmDatabaseToolsService).",
+  "source_file": "docs/security-review/traces/T04-wcf-entry-surface.md",
+  "nodes_added": [
+    {
+      "id": "host:TdmNCLinkService",
+      "kind": "wcf_service_host",
+      "name": "TdmNCLinkService",
+      "file": "V4Kernel/src/CLR/TdmNCLinkService/NCLinkServiceHost.cs",
+      "line_start": 1,
+      "line_end": 137,
+      "summary": "Windows Service. netTcpBinding security=None. installer default LocalSystem. includeExceptionDetailInFaults=True. mexHttpBinding enabled. ServiceModName configurable (FMS in shipped config)."
+    },
+    {
+      "id": "host:TdmMmsToolDataService",
+      "kind": "wcf_service_host",
+      "name": "TdmMmsToolDataService",
+      "file": "V4Kernel/src/CLR/TdmMmsToolDataService/TdmMmsToolDataServiceHost.cs",
+      "line_start": 1,
+      "line_end": 150,
+      "summary": "Windows Service. netTcpBinding security=None. installer default LocalSystem. includeExceptionDetailInFaults=True. mexTcpBinding enabled. maxReceivedMessageSize=2MB."
+    },
+    {
+      "id": "host:TdmAcmNCLinkService",
+      "kind": "wcf_service_host",
+      "name": "TdmAcmNCLinkService",
+      "file": "V4Kernel/src/CLR/TdmAcmNCLinkService/AcmNCLinkServiceHost.cs",
+      "line_start": 1,
+      "line_end": 137,
+      "summary": "Windows Service (clone of TdmNCLinkService with ServiceModName=ACM). Same security=None + LocalSystem default. UNIQUE: serviceMetadata httpGetEnabled=True (full WSDL fetchable over HTTP) — more permissive than TdmNCLinkService."
+    },
+    {
+      "id": "host:TdmDatabaseToolsService",
+      "kind": "wcf_service_host_console",
+      "name": "TdmDatabaseToolsService",
+      "file": "V4Kernel/src/CLR/TdmDatabaseToolsService/Program.cs",
+      "line_start": 1,
+      "line_end": 43,
+      "summary": "Console application (not a Windows Service). NetNamedPipeBinding with SecurityMode.None and MaxReceivedMessageSize=int.MaxValue. baseAddress is args[0]. Keep-alive is Console.ReadLine. Account = whoever launches it."
+    },
+    {
+      "id": "contract:iToolingServer",
+      "kind": "wcf_service_contract",
+      "name": "BAESystems.com.MAS.NCLink_TDM.iToolingServer",
+      "file": "V4Kernel/src/CLR/Interfaces/NCLink_TDM/iToolingServer.cs",
+      "line_start": 11,
+      "line_end": 83,
+      "summary": "11 OperationContracts. Used by both TdmNCLinkService and TdmAcmNCLinkService. XmlDocument parameters on SetToolingRequirements, SisterUpdate, MessageResult. [XmlSerializerFormat] (not NetDataContractSerializer)."
+    },
+    {
+      "id": "contract:ITdmToolData",
+      "kind": "wcf_service_contract",
+      "name": "Fastems.Interface.TdmInterface.ITdmToolData",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/Interface/ITdmToolData.cs",
+      "line_start": 11,
+      "line_end": 69,
+      "summary": "6 OperationContracts. Used by TdmMmsToolDataService. XmlDocument parameters on ToolUpdate, PresetRequest, UpdateNcProgramToolList. [XmlSerializerFormat]. Connect(string SystemName) is the canonical wire-driven SQLi entry traced in T01.c."
+    },
+    {
+      "id": "contract:ITdmMmsToolData",
+      "kind": "wcf_service_contract",
+      "name": "TdmMmsToolData.ITdmMmsToolData",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/ITdmMmsToolData.cs",
+      "line_start": 11,
+      "line_end": 100,
+      "summary": "~11 OperationContracts (count by grep; not all read individually). TDM-internal contract on TdmMmsToolDataService."
+    },
+    {
+      "id": "contract:IDatabseImportExport",
+      "kind": "wcf_service_contract",
+      "name": "TdmDatabaseImportExportService.IDatabseImportExport",
+      "file": "V4Kernel/src/CLR/TdmDatabaseToolsService/IDatabseImportExport.cs",
+      "line_start": 12,
+      "line_end": 41,
+      "summary": "14 OperationContracts. CheckConnection/ExportToFile/ImportFromFile/CopyData all take caller-supplied DB connection strings and file paths. Effectively a SQL-anywhere proxy."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "host:TdmNCLinkService",
+      "to": "contract:iToolingServer",
+      "kind": "exposes_endpoint",
+      "note": "netTcpBinding security=None at app.config:46-60. mexHttp at app.config:48.",
+      "file": "V4Kernel/src/CLR/TdmNCLinkService/app.config",
+      "line": 46
+    },
+    {
+      "from": "host:TdmAcmNCLinkService",
+      "to": "contract:iToolingServer",
+      "kind": "exposes_endpoint",
+      "note": "Same contract as TdmNCLinkService but with serviceMetadata httpGetEnabled=True (full WSDL over HTTP).",
+      "file": "V4Kernel/src/CLR/TdmAcmNCLinkService/App.config",
+      "line": 67
+    },
+    {
+      "from": "host:TdmMmsToolDataService",
+      "to": "contract:ITdmToolData",
+      "kind": "exposes_endpoint",
+      "note": "Primary external Fastems contract. Connect/Disconnect/ToolUpdate/etc.",
+      "file": "V4Kernel/src/CLR/TdmMmsToolDataService/App.config",
+      "line": 31
+    },
+    {
+      "from": "host:TdmMmsToolDataService",
+      "to": "contract:ITdmMmsToolData",
+      "kind": "exposes_endpoint",
+      "note": "TDM-internal contract on same host.",
+      "file": "V4Kernel/src/CLR/TdmMmsToolDataService/App.config",
+      "line": 32
+    },
+    {
+      "from": "host:TdmDatabaseToolsService",
+      "to": "contract:IDatabseImportExport",
+      "kind": "exposes_endpoint",
+      "note": "NetNamedPipeBinding security=None, MaxReceivedMessageSize=int.MaxValue.",
+      "file": "V4Kernel/src/CLR/TdmDatabaseToolsService/Program.cs",
+      "line": 29
+    },
+    {
+      "from": "contract:ITdmToolData",
+      "to": "fn:TdmToolData::Connect",
+      "kind": "operation_implementation",
+      "note": "T01.c traced this as the wire-driven SQLi entry — Connect(SystemName) → imms5Connect.scr.",
+      "file": "V4Kernel/src/CLR/TdmMmsToolData/TdmToolData.cs",
+      "line": 570
+    },
+    {
+      "from": "host:TdmAcmNCLinkService",
+      "to": "behavior:httpGetEnabled_True",
+      "kind": "permissive_metadata_exposure",
+      "note": "Unique to ACM: serviceMetadata httpGetEnabled=True. The other two TCP services set httpGetEnabled=False.",
+      "file": "V4Kernel/src/CLR/TdmAcmNCLinkService/App.config",
+      "line": 67
+    }
+  ],
+  "edges_removed": [],
+  "notes": "Two hosts (TdmAcmNCLinkService, TdmDatabaseToolsService) were absent from the prior review's M1 enumeration. The TdmDatabaseToolsService finding is materially different in threat model (named pipe vs. netTcp) and adds the SQL-anywhere-proxy primitive. ServiceModName=ACM is presumably for the ACM customer modification family (cf. ServiceModName=FMS for Fastems FMS). Whether any TDM deployment runs both TdmNCLinkService and TdmAcmNCLinkService simultaneously is a deployment-question not settled here."
+}

@@ -1,0 +1,227 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T07-wire-derived-filenames",
+  "trace_area": "T07 — Wire-derived sFileName audit",
+  "scope": "Inventory of tFile/tDir/tSystem/tSoc.CallScript constructors and system->CreateProcess/ShellExecute calls whose path-defining args contain $VAR substitutions; cross-reference against T04 WCF-reachable script catalog. Resolves the F-T05.3 Open question.",
+  "source_file": "docs/security-review/traces/T07-wire-derived-filenames.md",
+  "nodes_added": [
+    {
+      "id": "scr:_Graphic2D_TMS::main",
+      "kind": "script_entry",
+      "name": "_Graphic2D.scr main(sEnvVar,sGraphicName,...)",
+      "file": "Application/src/scr/TMS/_Graphic2D.scr",
+      "line_start": 45,
+      "line_end": 470,
+      "summary": "Shipped UI script for editing 2D graphics in CAD. Header self-identifies as mask-event handler (@Aufrufmaske: Jedes Grafikfeld). Five tFile constructors at lines 293,297,453,458,463 use $sEnvVar*/$sGraphicName params, but no soc->CallScript anywhere in the catalog invokes _Graphic2D — UI-only entry."
+    },
+    {
+      "id": "scr:_Graphic2D_pAHD::main",
+      "kind": "script_entry",
+      "name": "_Graphic2D.scr main(sEnvVar,sGraphicName,...)",
+      "file": "Custom/pAHD/scr/_Graphic2D.scr",
+      "line_start": 39,
+      "line_end": 460,
+      "summary": "Custom pAHD overlay of _Graphic2D. Same five $VAR-tainted tFile constructors at lines 276,280,443,448,453. Same UI-only entry pattern."
+    },
+    {
+      "id": "scr:pMAN_SupplierCatalog::main",
+      "kind": "script_entry",
+      "name": "pMAN_SupplierCatalog.scr main()",
+      "file": "Custom/pMAN/scr/pMAN_SupplierCatalog.scr",
+      "line_start": 19,
+      "line_end": 45,
+      "summary": "Custom pMAN UI script. tFile at line 37 uses $_FilePathName which is set by mask->StartFileDlg(...) at line 27 (interactive file picker). UI-only; not WCF-reachable."
+    },
+    {
+      "id": "scr:_ToolUpdateInterface_Tdm::main",
+      "kind": "script_entry",
+      "name": "_ToolUpdateInterface.scr main(sToolId,sState,sReferencedTable)",
+      "file": "Application/src/scr/Tdm/custom/_ToolUpdateInterface.scr",
+      "line_start": 37,
+      "line_end": 104,
+      "summary": "Deploy-time-customised dispatch shim. local tString sScriptNameBefore(\"\") at line 40 — customer integrator edits the literal to point at their handler. soc->CallScript($sScriptName, $sScriptExt, ...) at line 87 splices the local into the script-name arg. NOT wire-derived; wire input fills sToolId/sState/sReferencedTable (passed as CallScript args, not as the script-name)."
+    },
+    {
+      "id": "scr:_lgmAutoGoAcknowledgeLoop::main",
+      "kind": "script_entry",
+      "name": "_lgmAutoGoAcknowledgeLoop.scr (DB-derived PRGNAME dispatch)",
+      "file": "Application/src/scr/LGM/_lgmAutoGoAcknowledgeLoop.scr",
+      "line_start": 200,
+      "line_end": 230,
+      "summary": "Selects TMS_DEVICE.PRGNAME keyed on $sCOSTUNIT/$sWORKPLACE/$sSTOCKPLACEID at line 204, then soc->CallScript($_AutoLoopDevicePrgName,scr,1,...) at line 218. PRGNAME is server-config; even if wire-influenced selection keys, the resolved script name is cache-bounded by TMS_SCR per F-T05.4."
+    },
+    {
+      "id": "scr:_isapHttpResult::main",
+      "kind": "script_entry",
+      "name": "_isapHttpResult.scr main(CompId,State,Result)",
+      "file": "Application/src/scr/iSap/_isapHttpResult.scr",
+      "line_start": 19,
+      "line_end": 145,
+      "summary": "iSAP outbound HTTP result handler. soc->CallScript(TMS_SCR, \"$_ReturnScriptName$.scr\") at lines 102,138 uses a globally-set script name. Caller chain: TDM-internal _isapTDM*Http.scr family (server-initiated outbound to SAP). Not reachable from T04's 4 WCF contracts. iSAP inbound surface is an Open question."
+    },
+    {
+      "id": "scr:_wisServerSendMail::main",
+      "kind": "script_entry",
+      "name": "_wisServerSendMail.scr (live system->ShellExecute mail-send)",
+      "file": "Application/src/scr/Wis/_wisServerSendMail.scr",
+      "line_start": 50,
+      "line_end": 65,
+      "summary": "Three live system->ShellExecute calls (lines 55,57,61) with $VAR-substituted cmdlines, including one that invokes PowerShell -ExecutionPolicy Bypass -File $&TMS_HOME$\\DATAOUT\\MAIL.PS1. Scheduled-job entry; not WCF-reachable. From a script-author / Custom-overlay-write attacker, the bare-$VAR splicing is an OS-command-injection primitive."
+    },
+    {
+      "id": "case:tFile::ctor_with_$VAR_args",
+      "kind": "annotation",
+      "name": "Wire-derived $VAR in tFile constructor argument",
+      "file": "V4Kernel/src/V4/Tls/tlsFile.cpp",
+      "line_start": 5736,
+      "line_end": 5786,
+      "summary": "Annotation node for hits where tFile constructor takes $VAR-tainted envVar/fileName/ext. Per F-T07.1, ZERO wire-reachable instances found in customer+shipped catalog. The unsafe path-build at GetPathIfExists is reachable only from UI-only scripts (_Graphic2D, pMAN_SupplierCatalog) today."
+    },
+    {
+      "id": "case:tSoc::CallScript_with_$VAR_name",
+      "kind": "annotation",
+      "name": "Wire-derived $VAR in soc->CallScript script-name (2nd arg)",
+      "file": "V4Kernel/src/V4/Tls/tlsSoc.cpp",
+      "line_start": 0,
+      "line_end": 0,
+      "summary": "AMENDED 2026-05-26: 114 raw hits across 57 files, grouping into ~10 dispatch patterns. Original commit reported 18 hits / 14 files — undercount missed the Custom/pMAN overlay tree (_*Interface.scr overlays, _isapBiztalkResult, iSof* family, pMAN_PresetWrite/PresetStartPolling, isapEventSimulator) and the STO/TMS scheduler family (_stoStartReportService, _tmsStartReportService, _stoSendReportMail, _tmsSendReportMail, _stoBanfReportWriteFile, _stoOnKeyCmd). After grouping by $VAR source semantic, all 114 hits resolve to env-var ($&FOO), deploy-time-customised local (_*Interface.scr family), DB-config-derived (TMS_DEVICE.PRGNAME, TMS_CONFIGVALUES.VAL, TMS_EXTSYSEVENT.SCRIPTFILENAME, STO/TMS scheduler table), mask-object reference, or deterministically-built literal-concat ($_ScriptName$_$sInterfaceType$). ZERO wire-derived instances. F-T05.4 cache-binding additionally caps any TMS_SCR resolution to indexed scripts. See F-T07.4 for the DB-driven dispatcher family enumeration."
+    },
+    {
+      "id": "case:tSystem::ShellExecute_with_$VAR_cmdline",
+      "kind": "annotation",
+      "name": "Wire-derived $VAR in system->ShellExecute command line",
+      "file": "V4Kernel/src/V4/Tls/tlsSystem.cpp",
+      "line_start": 0,
+      "line_end": 0,
+      "summary": "AMENDED 2026-05-26: 16 live + 57 commented hits (raw 73) across Acc/Wis batch-reporting scripts. Original commit reported 5 live (Trace-table claim) / 14 live (F-T07.3 body) — internal inconsistency resolved at 16. Live entries: accOrderEvaluation:59, _accCallsOnAnsweringMachine:115, accOpenOrder:517/559/571/577/588/593/598/603 (8), _wisServerSendMail:55/57/61 (3, line 57 invokes PowerShell -ExecutionPolicy Bypass), _wisSendOutlookMail:36/40 (2, NEW in this amendment), _wisFlexCareCreditServerFunctions.scp:230. None invoked from T04's 4 WCF contracts. Secondary-order chain (script-author level) is real: bare-$VAR cmdline splicing → OS command injection if any value is tainted (e.g. via F-T01.3 SQLi-into-tString row mutation that feeds subsequent scheduler runs)."
+    },
+    {
+      "id": "scr:isapEventSimulator::main",
+      "kind": "script_entry",
+      "name": "isapEventSimulator.scr main(sEXTSYSEVENTCALLNR)",
+      "file": "Custom/pMAN/scr/isapEventSimulator.scr",
+      "line_start": 20,
+      "line_end": 97,
+      "summary": "NEW 2026-05-26 amendment. Mask-button entry in Custom/pMAN. main(sEXTSYSEVENTCALLNR) takes the call-number from a UI grid row, runs outer select 'from TMS_EXTSYSEVENTCALL where EXTSYSEVENTCALLNR = $sEXTSYSEVENTCALLNR' at line 25-28 (raw string-concat SQLi shape, distinct T08 finding), then resolves the script name via 'select SCRIPTFILENAME&_ScriptName from TMS_EXTSYSEVENT where EXTSYSEVENTID = $sqlEvent[0][EXTSYSEVENTID]' at line 36 and soc->CallScript($_ScriptName, scr, 1, $sqlEvent[0][PARAMVAL01..34]) at line 44. NOT in T04 WCF catalog, but shape-identical to F-T05.5 / F-T07.2 Custom-overlay-write threat: an attacker who can insert into TMS_EXTSYSEVENT.SCRIPTFILENAME can retarget the dispatcher. Cache-bounded to TMS_SCR-indexed scripts per F-T05.4."
+    },
+    {
+      "id": "scr:_stoStartReportService::main",
+      "kind": "script_entry",
+      "name": "_stoStartReportService.scr main() — STO scheduler entry",
+      "file": "Application/src/scr/STO/_stoStartReportService.scr",
+      "line_start": 35,
+      "line_end": 300,
+      "summary": "NEW 2026-05-26 amendment. STO email-reporting scheduler entry; main() takes no args. Iterates STO scheduler-table rows; for each, dispatches via soc->CallScript(TMS_SCR, $_Script, , , $_ExportFileName, $sFileDateTime, $_Costunit, $_Workplace, ...) at line 270. $_Script is set per-row from the scheduler table (server-config). Not WCF-reachable. F-T07.4 family member."
+    },
+    {
+      "id": "scr:_stoSendReportMail::main",
+      "kind": "script_entry",
+      "name": "_stoSendReportMail.scr main(ExportFileName, FileDate, ...)",
+      "file": "Application/src/scr/STO/_stoSendReportMail.scr",
+      "line_start": 28,
+      "line_end": 90,
+      "summary": "NEW 2026-05-26 amendment. Called from _stoStartReportService. main() takes wire-style params (ExportFileName, FileDate, Server, SenderName, ...), but the script-name $sAlterNativeScriptSendFile is from 'select TMS_CONFIGVALUES.VAL where CONFIGID=STO_REPORTALTERNATIVSENDSCR' (line 45), not from main args. main args are passed *through* as CallScript args (lines 62-64, 73-75). F-T07.4 family member."
+    },
+    {
+      "id": "scr:pMAN_PresetWrite::main",
+      "kind": "script_entry",
+      "name": "pMAN_PresetWrite.scr main(CommissionId, OperationId, Commissionlistpos, Valuespos)",
+      "file": "Custom/pMAN/scr/pMAN_PresetWrite.scr",
+      "line_start": 15,
+      "line_end": 115,
+      "summary": "NEW 2026-05-26 amendment. Custom/pMAN preset-write entry (mask button). main() takes 4 wire-style params, runs 'select PRGNAME&_SCR from TMS_DEVICE where DEVICEID = $tDevices[_Row][DEVICEID]' at line 96, then soc->CallScript(TMS_SCR, $_SCR, scr, 1, $CommissionId, $OperationId, $Commissionlistpos, $Valuespos, $tDevices[_Row][DEVICEID]) at line 102. Same shape as _lgmAutoGoAcknowledgeLoop. Cache-bounded. F-T07.4 family member."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "scr:_ToolUpdateInterface_Tdm::main",
+      "to": "case:tSoc::CallScript_with_$VAR_name",
+      "kind": "script_calls",
+      "note": "soc->CallScript(TMS_SCR, \"$sScriptName\", \"$sScriptExt\", ...) at line 87. $sScriptName fed from local tString sScriptNameBefore/After/Rollback initialised empty at lines 40-42, intended for customer to edit at deploy time. NOT wire-derived.",
+      "file": "Application/src/scr/Tdm/custom/_ToolUpdateInterface.scr",
+      "line": 87
+    },
+    {
+      "from": "scr:_lgmAutoGoAcknowledgeLoop::main",
+      "to": "case:tSoc::CallScript_with_$VAR_name",
+      "kind": "script_calls",
+      "note": "soc->CallScript(TMS_SCR, \"$_AutoLoopDevicePrgName\", scr, 1, ...) at line 218. $_AutoLoopDevicePrgName from SQL SELECT TMS_DEVICE.PRGNAME at line 204. DB-config-derived, not wire-derived. Even if wire-controlled selection key, resolved script is TMS_SCR-cache-bounded (F-T05.4).",
+      "file": "Application/src/scr/LGM/_lgmAutoGoAcknowledgeLoop.scr",
+      "line": 218
+    },
+    {
+      "from": "scr:_isapHttpResult::main",
+      "to": "case:tSoc::CallScript_with_$VAR_name",
+      "kind": "script_calls",
+      "note": "soc->CallScript(TMS_SCR, \"$_ReturnScriptName$.scr\") at lines 102,138. $_ReturnScriptName set globally by iSAP outbound chain. Outbound chain (TDM→SAP) is server-initiated. iSAP inbound surface NOT enumerated in T04 — Open question.",
+      "file": "Application/src/scr/iSap/_isapHttpResult.scr",
+      "line": 102
+    },
+    {
+      "from": "scr:_wisServerSendMail::main",
+      "to": "case:tSystem::ShellExecute_with_$VAR_cmdline",
+      "kind": "script_calls",
+      "note": "system->ShellExecute(\"open\",,\"$sMailPrg$\",...,\"$Subject\"...$To...$Attachment...) at lines 55,61; one variant at line 57 invokes powershell -ExecutionPolicy Bypass -File MAIL.PS1. Scheduled-job entry; not wire-reachable. Script-author-level OS-cmd-injection primitive.",
+      "file": "Application/src/scr/Wis/_wisServerSendMail.scr",
+      "line": 55
+    },
+    {
+      "from": "scr:_Graphic2D_TMS::main",
+      "to": "case:tFile::ctor_with_$VAR_args",
+      "kind": "script_calls",
+      "note": "Five tFile ctors with $sEnvVar*/$sGraphicName at lines 293,297,453,458,463. UI-only entry (no CallScript caller in catalog). header @Aufrufmaske confirms mask-event trigger.",
+      "file": "Application/src/scr/TMS/_Graphic2D.scr",
+      "line": 293
+    },
+    {
+      "from": "scr:_Graphic2D_pAHD::main",
+      "to": "case:tFile::ctor_with_$VAR_args",
+      "kind": "script_calls",
+      "note": "Customer overlay of _Graphic2D. Five tFile ctors with $VAR at lines 276,280,443,448,453. UI-only entry.",
+      "file": "Custom/pAHD/scr/_Graphic2D.scr",
+      "line": 276
+    },
+    {
+      "from": "scr:pMAN_SupplierCatalog::main",
+      "to": "case:tFile::ctor_with_$VAR_args",
+      "kind": "script_calls",
+      "note": "tFile(, \"$_FilePathName\") at line 37. _FilePathName set by mask->StartFileDlg(...) at line 27 — interactive file picker, only fires in UI context.",
+      "file": "Custom/pMAN/scr/pMAN_SupplierCatalog.scr",
+      "line": 37
+    },
+    {
+      "from": "scr:isapEventSimulator::main",
+      "to": "case:tSoc::CallScript_with_$VAR_name",
+      "kind": "script_calls",
+      "note": "NEW 2026-05-26. soc->CallScript(\"TMS_SCR\", \"$_ScriptName\", \"scr\", \"1\", $sqlEvent[0][PARAMVAL01..34]) at line 44. $_ScriptName resolved from 'select SCRIPTFILENAME&_ScriptName from TMS_EXTSYSEVENT where EXTSYSEVENTID = $sqlEvent[0][EXTSYSEVENTID]' at line 36, where the outer sqlEvent select takes $sEXTSYSEVENTCALLNR from main() arg (line 28, raw-spliced — separate T08 SQLi finding). Script-name is DB-resolved, not wire-derived. F-T07.4 family member.",
+      "file": "Custom/pMAN/scr/isapEventSimulator.scr",
+      "line": 44
+    },
+    {
+      "from": "scr:_stoStartReportService::main",
+      "to": "case:tSoc::CallScript_with_$VAR_name",
+      "kind": "script_calls",
+      "note": "NEW 2026-05-26. soc->CallScript(TMS_SCR, $_Script, , , $_ExportFileName, $sFileDateTime, ...) at line 270. $_Script from STO scheduler-table iteration. Not WCF-reachable; scheduler entry. F-T07.4 family member.",
+      "file": "Application/src/scr/STO/_stoStartReportService.scr",
+      "line": 270
+    },
+    {
+      "from": "scr:_stoSendReportMail::main",
+      "to": "case:tSoc::CallScript_with_$VAR_name",
+      "kind": "script_calls",
+      "note": "NEW 2026-05-26. soc->CallScript('TMS_SCR', $sAlterNativeScriptSendFile, scp/scr, , $ExportFileName, $FileDate, ...) at lines 62, 73. $sAlterNativeScriptSendFile from 'select TMS_CONFIGVALUES.VAL where CONFIGID=STO_REPORTALTERNATIVSENDSCR' (line 45). Wire-style main args passed through but script-name is DB-config. F-T07.4 family member.",
+      "file": "Application/src/scr/STO/_stoSendReportMail.scr",
+      "line": 62
+    },
+    {
+      "from": "scr:pMAN_PresetWrite::main",
+      "to": "case:tSoc::CallScript_with_$VAR_name",
+      "kind": "script_calls",
+      "note": "NEW 2026-05-26. soc->CallScript(TMS_SCR, $_SCR, scr, 1, $CommissionId, ...) at line 102. $_SCR from 'select PRGNAME&_SCR from TMS_DEVICE where DEVICEID = $tDevices[_Row][DEVICEID]' at line 96. Same shape as _lgmAutoGoAcknowledgeLoop. Cache-bounded. F-T07.4 family member.",
+      "file": "Custom/pMAN/scr/pMAN_PresetWrite.scr",
+      "line": 102
+    }
+  ],
+  "edges_removed": [],
+  "notes": "AMENDED 2026-05-26 (followup to ae4b801). Spec-compliance review surfaced understated hit counts in the original commit: soc->CallScript script-name $VAR was reported 18/14 but actual is 114 hits / 57 files / ~10 dispatch patterns; system->ShellExecute was reported 5 live (Trace table) and 14 live (F-T07.3 body) — inconsistency resolved at 16 live; _wisSendOutlookMail.scr:36,40 added to F-T07.3 inventory. F-T07.4 added as a new finding to enumerate the DB-driven dispatcher family (_lgmAutoGoAcknowledgeLoop, _stoStartReportService, _tmsStartReportService, _stoSendReportMail, _tmsSendReportMail, _stoBanfReportWriteFile, _ordBanfReportWriteFile, pMAN_PresetWrite, pMAN_PresetStartPolling, Custom/pMAN/scr/isapEventSimulator). F-T07.1 verdict UNCHANGED: REFUTED. No wire-derived value reaches any tFile/tDir/tSystem/tSoc.CallScript constructor in any script reachable from T04's 4 WCF contracts. Re-verified against the corrected 114-hit corpus on 2026-05-26: every one of the 10 dispatch patterns resolves to env-var ($&FOO), deploy-time-customised local (_*Interface.scr family, including 6 Custom/pMAN overlays), DB-config-derived (TMS_DEVICE.PRGNAME, TMS_CONFIGVALUES.VAL, TMS_EXTSYSEVENT.SCRIPTFILENAME, STO/TMS scheduler tables), mask-object reference, or deterministically-built literal concat ($_ScriptName$_$sInterfaceType$). The 12 iMMS5 scripts (the only WCF-reachable family with shipped scripts) contain zero tFile/tDir/tSystem constructors with $VAR args, and all their soc->CallScript invocations use literal script names. F-T05.3 remains 'theoretical from wire'. Open questions: iSAP inbound HTTP surface, post-TDMone REST gateway, LGM/iMGM-specific entry hosts, C++ direct callers of GetPathIfExists, isapEventSimulator.scr:28 SQLi (deferred to T08)."
+}

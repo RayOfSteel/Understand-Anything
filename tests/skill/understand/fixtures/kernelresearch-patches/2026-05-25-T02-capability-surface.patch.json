@@ -1,0 +1,284 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T02-capability-surface",
+  "trace_area": "T02 — Host capability surface",
+  "scope": "Function-level nodes and edges for the script-callable type registry and the OnDoFunc dispatch surfaces of tSystem, tSoc, tThread, tFile, tDir, and the tJava JVM bring-up.",
+  "source_file": "docs/security-review/traces/T02-capability-surface.md",
+  "nodes_added": [
+    {
+      "id": "fn:tlsBase::ACreateObject",
+      "kind": "function",
+      "name": "tlsBase::ACreateObject",
+      "file": "V4Kernel/src/V4/Tls/tlsBase.cpp",
+      "line_start": 656,
+      "line_end": 988,
+      "summary": "Factory for `local tXxx name();`. Flat if/else cascade over ~55 type names. #ifndef TLSEXTDLL block at 762-980 is included in the kernel/service build (only the companion TlsExt project defines TLSEXTDLL)."
+    },
+    {
+      "id": "fn:tlsSocP::OnDeclare",
+      "kind": "function",
+      "name": "tlsSocP::OnDeclare",
+      "file": "V4Kernel/src/V4/Tls/tlsSocP.cpp",
+      "line_start": 479,
+      "line_end": 544,
+      "summary": "Coco/R VM callback for `local tXxx name();`. Resolves visibility (local/mask/subsys/global) then delegates to ACreateObject."
+    },
+    {
+      "id": "fn:tlsSocP::OnGetObjectPtr",
+      "kind": "function",
+      "name": "tlsSocP::OnGetObjectPtr",
+      "file": "V4Kernel/src/V4/Tls/tlsSocP.cpp",
+      "line_start": 687,
+      "line_end": 723,
+      "summary": "Resolves bare token references (`system`, `sql`, `file`, …) to tlsObject* via tlsEnv::FindObject."
+    },
+    {
+      "id": "fn:tlsSystem::OnDoFunc",
+      "kind": "function",
+      "name": "tlsSystem::OnDoFunc",
+      "file": "V4Kernel/src/V4/Tls/tlsSystem.cpp",
+      "line_start": 1064,
+      "line_end": 1245,
+      "summary": "Script-callable surface for tSystem. Dispatches CreateProcess, CreateProcessEx, ShellExecute, TerminateProcess, etc."
+    },
+    {
+      "id": "fn:tlsSystem::CreateProcessEx",
+      "kind": "function",
+      "name": "tlsSystem::CreateProcessEx",
+      "file": "V4Kernel/src/V4/Tls/tlsSystem.cpp",
+      "line_start": 319,
+      "line_end": 410,
+      "summary": "11-arg implementation. Resolves path via tlsFile::GetPathIfExists, calls Win32 CreateProcess directly with no allowlist."
+    },
+    {
+      "id": "fn:tlsSystem::MyShellExecute",
+      "kind": "function",
+      "name": "tlsSystem::MyShellExecute",
+      "file": "V4Kernel/src/V4/Tls/tlsSystem.cpp",
+      "line_start": 647,
+      "line_end": 740,
+      "summary": "Wraps Win32 ShellExecute. No verb allowlist, no extension filter."
+    },
+    {
+      "id": "fn:tlsSoc::OnDoFunc",
+      "kind": "function",
+      "name": "tlsSoc::OnDoFunc",
+      "file": "V4Kernel/src/V4/Tls/tlsSoc.cpp",
+      "line_start": 852,
+      "line_end": 1056,
+      "summary": "Script-callable surface for tSoc. Dispatches CallScript, Exec, Calculate, etc."
+    },
+    {
+      "id": "case:tlsSoc::OnDoFunc::Exec",
+      "kind": "dispatch_case",
+      "name": "tlsSoc::OnDoFunc Exec",
+      "file": "V4Kernel/src/V4/Tls/tlsSoc.cpp",
+      "line_start": 956,
+      "line_end": 975,
+      "summary": "EVAL primitive. Reads a string value from a script-named variable, constructs a fresh tlsSoc with that string as source, Exec()s."
+    },
+    {
+      "id": "case:tlsSoc::OnDoFunc::CallScript",
+      "kind": "dispatch_case",
+      "name": "tlsSoc::OnDoFunc CallScript",
+      "file": "V4Kernel/src/V4/Tls/tlsSoc.cpp",
+      "line_start": 902,
+      "line_end": 931,
+      "summary": "Dispatches another .scr by envVar+name+ext with script-supplied parameters."
+    },
+    {
+      "id": "fn:tlsThread::OnDoFunc",
+      "kind": "function",
+      "name": "tlsThread::OnDoFunc",
+      "file": "V4Kernel/src/V4/Tls/tlsThread.cpp",
+      "line_start": 1317,
+      "line_end": 1440,
+      "summary": "Script-callable surface for tThread. Dispatches InitScript, Start, Pause, Remove (with optional TerminateThread), IsRunning, etc."
+    },
+    {
+      "id": "case:tlsThread::OnDoFunc::InitScript",
+      "kind": "dispatch_case",
+      "name": "tlsThread::OnDoFunc InitScript",
+      "file": "V4Kernel/src/V4/Tls/tlsThread.cpp",
+      "line_start": 1356,
+      "line_end": 1376,
+      "summary": "Records script body (envVar+filename+ext) + call cadence + callback for later Start to invoke."
+    },
+    {
+      "id": "fn:tlsThread::Start_CreateThread",
+      "kind": "function",
+      "name": "tlsThread::Start (CreateThread call)",
+      "file": "V4Kernel/src/V4/Tls/tlsThread.cpp",
+      "line_start": 568,
+      "line_end": 580,
+      "summary": "Win32 CreateThread at line 570 spawns the worker that runs the script."
+    },
+    {
+      "id": "fn:tlsFile::OnDoFunc",
+      "kind": "function",
+      "name": "tlsFile::OnDoFunc",
+      "file": "V4Kernel/src/V4/Tls/tlsFile.cpp",
+      "line_start": 7749,
+      "line_end": 8920,
+      "summary": "Massive script-callable surface for tFile. Open/Read/Write/Delete/Copy/Move/CheckFile/ReadStrBase64/etc. No path allowlist at dispatch layer."
+    },
+    {
+      "id": "fn:tlsDir::OnDoFunc",
+      "kind": "function",
+      "name": "tlsDir::OnDoFunc",
+      "file": "V4Kernel/src/V4/Tls/tlsDir.cpp",
+      "line_start": 1346,
+      "line_end": 1487,
+      "summary": "Script-callable surface for tDir. CreateDir/RemoveDir/RenameDir/Get."
+    },
+    {
+      "id": "fn:tlsJava::InitVM",
+      "kind": "function",
+      "name": "tlsJava::InitVM",
+      "file": "V4Kernel/src/V4/Tls/tlsJava.cpp",
+      "line_start": 273,
+      "line_end": 622,
+      "summary": "Loads jvm.dll from TMS_JAVAJRE / TMS_WORK / Vericut install, calls JNI_CreateJavaVM. JVM is in-process; can also reuse an existing JVM via JNI_GetCreatedJavaVMs."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "fn:tlsSocP::OnDeclare",
+      "to": "fn:tlsBase::ACreateObject",
+      "kind": "delegates",
+      "note": "OnDeclare → tlsEnv::ACreateObject → tlsBase::ACreateObject (same code, single hop via inheritance).",
+      "file": "V4Kernel/src/V4/Tls/tlsSocP.cpp",
+      "line": 532
+    },
+    {
+      "from": "fn:tlsBase::ACreateObject",
+      "to": "fn:tlsSystem::OnDoFunc",
+      "kind": "instantiates_with_dispatcher",
+      "note": "`local tSystem name();` constructs tlsSystem; later calls dispatch via OnDoFunc.",
+      "file": "V4Kernel/src/V4/Tls/tlsBase.cpp",
+      "line": 711
+    },
+    {
+      "from": "fn:tlsBase::ACreateObject",
+      "to": "fn:tlsSoc::OnDoFunc",
+      "kind": "instantiates_with_dispatcher",
+      "note": "`local tSoc name();` then later method calls dispatch via OnDoFunc.",
+      "file": "V4Kernel/src/V4/Tls/tlsBase.cpp",
+      "line": 757
+    },
+    {
+      "from": "fn:tlsBase::ACreateObject",
+      "to": "fn:tlsThread::OnDoFunc",
+      "kind": "instantiates_with_dispatcher",
+      "note": "tThread factory at line 902 of tlsBase.cpp.",
+      "file": "V4Kernel/src/V4/Tls/tlsBase.cpp",
+      "line": 902
+    },
+    {
+      "from": "fn:tlsBase::ACreateObject",
+      "to": "fn:tlsFile::OnDoFunc",
+      "kind": "instantiates_with_dispatcher",
+      "note": "tFile factory at line 731 of tlsBase.cpp.",
+      "file": "V4Kernel/src/V4/Tls/tlsBase.cpp",
+      "line": 731
+    },
+    {
+      "from": "fn:tlsBase::ACreateObject",
+      "to": "fn:tlsDir::OnDoFunc",
+      "kind": "instantiates_with_dispatcher",
+      "note": "tDir factory at line 741 of tlsBase.cpp.",
+      "file": "V4Kernel/src/V4/Tls/tlsBase.cpp",
+      "line": 741
+    },
+    {
+      "from": "fn:tlsBase::ACreateObject",
+      "to": "fn:tlsJava::InitVM",
+      "kind": "instantiates_with_dispatcher",
+      "note": "tJava factory at line 745 of tlsBase.cpp. InitVM is called on first use to bring up the JVM.",
+      "file": "V4Kernel/src/V4/Tls/tlsBase.cpp",
+      "line": 745
+    },
+    {
+      "from": "fn:tlsSystem::OnDoFunc",
+      "to": "fn:tlsSystem::CreateProcessEx",
+      "kind": "dispatches",
+      "note": "case_CreateProcess / case_CreateProcessEx both forward to CreateProcessEx.",
+      "file": "V4Kernel/src/V4/Tls/tlsSystem.cpp",
+      "line": 1147
+    },
+    {
+      "from": "fn:tlsSystem::OnDoFunc",
+      "to": "fn:tlsSystem::MyShellExecute",
+      "kind": "dispatches",
+      "note": "case_ShellExecute forwards to MyShellExecute.",
+      "file": "V4Kernel/src/V4/Tls/tlsSystem.cpp",
+      "line": 1236
+    },
+    {
+      "from": "fn:tlsSystem::CreateProcessEx",
+      "to": "ext:Win32::CreateProcess",
+      "kind": "win32_call",
+      "note": "Raw Win32 CreateProcess at line 381 — pszCmdLine is script-controlled string, no shell escape.",
+      "file": "V4Kernel/src/V4/Tls/tlsSystem.cpp",
+      "line": 381
+    },
+    {
+      "from": "fn:tlsSystem::MyShellExecute",
+      "to": "ext:Win32::ShellExecute",
+      "kind": "win32_call",
+      "note": "Raw Win32 ShellExecute at lines 714 and 728.",
+      "file": "V4Kernel/src/V4/Tls/tlsSystem.cpp",
+      "line": 714
+    },
+    {
+      "from": "fn:tlsSoc::OnDoFunc",
+      "to": "case:tlsSoc::OnDoFunc::Exec",
+      "kind": "contains_case",
+      "note": "Eval-of-string primitive.",
+      "file": "V4Kernel/src/V4/Tls/tlsSoc.cpp",
+      "line": 956
+    },
+    {
+      "from": "fn:tlsSoc::OnDoFunc",
+      "to": "case:tlsSoc::OnDoFunc::CallScript",
+      "kind": "contains_case",
+      "note": "Dynamic dispatch of any .scr on TMS_SCR.",
+      "file": "V4Kernel/src/V4/Tls/tlsSoc.cpp",
+      "line": 902
+    },
+    {
+      "from": "case:tlsSoc::OnDoFunc::Exec",
+      "to": "fn:tlsSoc::Exec",
+      "kind": "evals",
+      "note": "Constructs a tlsSoc with sProgram as source and Exec()s.",
+      "file": "V4Kernel/src/V4/Tls/tlsSoc.cpp",
+      "line": 974
+    },
+    {
+      "from": "case:tlsThread::OnDoFunc::InitScript",
+      "to": "fn:tlsThread::Start_CreateThread",
+      "kind": "later_invokes",
+      "note": "InitScript records the body; Start() actually calls CreateThread.",
+      "file": "V4Kernel/src/V4/Tls/tlsThread.cpp",
+      "line": 1374
+    },
+    {
+      "from": "fn:tlsThread::Start_CreateThread",
+      "to": "ext:Win32::CreateThread",
+      "kind": "win32_call",
+      "note": "Win32 CreateThread at line 570 launches the script-running worker.",
+      "file": "V4Kernel/src/V4/Tls/tlsThread.cpp",
+      "line": 570
+    },
+    {
+      "from": "fn:tlsJava::InitVM",
+      "to": "ext:JNI::JNI_CreateJavaVM",
+      "kind": "jni_call",
+      "note": "GetProcAddress(jvm.dll, JNI_CreateJavaVM) at line 488, cast and call at line 504.",
+      "file": "V4Kernel/src/V4/Tls/tlsJava.cpp",
+      "line": 504
+    }
+  ],
+  "edges_removed": [],
+  "notes": "tCode and tAssembly entries in ACreateObject (lines 951, 776) are recorded as registry presence but their OnDoFunc surfaces were not deep-read. Worth a future trace if .NET-side eval is in scope."
+}

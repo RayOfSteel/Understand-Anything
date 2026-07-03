@@ -1,0 +1,222 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-security-review-consolidated",
+  "title": "Consolidated security-review graph delta (T01-T12)",
+  "date": "2026-05-25",
+  "source_plan": "docs/superpowers/plans/2026-05-25-cocor-security-trace-plan.md",
+  "source_report": "docs/security-review-cocor.md",
+  "summary": "Aggregates twelve per-area trace patches into a single index. T01-T06 establish the wire-to-DB SQLi spine, the script-callable capability surface, the VM runtime safeguards, the complete WCF entry-point enumeration, the script-side bypass paths, and the WCF deserialization surface. T07-T12 form the 2026-05-25 follow-up pass that resolves the bulk of T01-T06's outstanding Open questions: wire-derived sFileName reachability (T07), TMS_EXTSYSEVENTCALL insert paths (T08), LoadScrFileInfo recursion / symlink handling (T09), cocFORMAT wire reachability (T10), per-OnDoFunc capability-flag inventory (T11), and the ITdmMmsToolData operation surface (T12). Apply the per-area patches in order; this file is the index only.",
+  "per_area_patches": [
+    {
+      "id": "2026-05-25-T01-sqli-spine",
+      "trace_area": "T01 — SQLi spine",
+      "path": ".understand-anything/patches/2026-05-25-T01-sqli-spine.patch.json",
+      "source_doc": "docs/security-review/traces/T01-sqli-spine.md",
+      "node_count": 12,
+      "edge_count": 11,
+      "key_findings": [
+        "F-T01.1 OnReplDollar bare $VAR does no SQL escape",
+        "F-T01.2 tSql has no parameterised binding API",
+        "F-T01.3 Wire-driven SQLi reachable via TdmMmsToolData.Connect → imms5Connect.scr",
+        "F-T01.4 pahdEventhandlerApriso2TDM.scr is queue-driven, not wire-driven (refutes prior framing)",
+        "F-T01.5 Opt-in $['] escape exists; customer catalog does not use it"
+      ]
+    },
+    {
+      "id": "2026-05-25-T02-capability-surface",
+      "trace_area": "T02 — Host capability surface",
+      "path": ".understand-anything/patches/2026-05-25-T02-capability-surface.patch.json",
+      "source_doc": "docs/security-review/traces/T02-capability-surface.md",
+      "node_count": 15,
+      "edge_count": 17,
+      "key_findings": [
+        "F-T02.1 Capability inventory (tSystem/tSoc/tThread/tFile/tDir/tJava) confirmed",
+        "F-T02.2 ~55 types in ACreateObject registry; all ungated in kernel/service build",
+        "F-T02.3 tSystem/tSoc.CallScript/tFile used freely in customer scripts; tSoc.Exec/tThread/tJava not exploited but wire-reachable",
+        "F-T02.4 tSoc.Exec confirmed eval-of-string",
+        "F-T02.5 tJava brings up in-process JVM via JNI_CreateJavaVM"
+      ]
+    },
+    {
+      "id": "2026-05-25-T03-vm-safeguards",
+      "trace_area": "T03 — VM runtime safeguards",
+      "path": ".understand-anything/patches/2026-05-25-T03-vm-safeguards.patch.json",
+      "source_doc": "docs/security-review/traces/T03-vm-safeguards.md",
+      "node_count": 10,
+      "edge_count": 8,
+      "key_findings": [
+        "F-T03.1 Machine::Interpret for(;;) with no budget",
+        "F-T03.2 Push/Pop overflow exit(1) terminates whole WCF service",
+        "F-T03.3 cocFORMAT is a real format-string primitive (not %s wrapper)",
+        "F-T03.4 No recursion gates anywhere in cocCALL* / OnDoFunc",
+        "F-T03.5 m_sBuf string-buffer is a separate fixed-size constraint"
+      ]
+    },
+    {
+      "id": "2026-05-25-T04-wcf-entry-surface",
+      "trace_area": "T04 — WCF entry surface",
+      "path": ".understand-anything/patches/2026-05-25-T04-wcf-entry-surface.patch.json",
+      "source_doc": "docs/security-review/traces/T04-wcf-entry-surface.md",
+      "node_count": 8,
+      "edge_count": 7,
+      "key_findings": [
+        "F-T04.1 4 WCF service hosts, not 2 (TdmAcmNCLinkService and TdmDatabaseToolsService missed by prior review)",
+        "F-T04.2 All three TCP hosts use security=None",
+        "F-T04.3 All three Windows-service hosts default to LocalSystem",
+        "F-T04.4 includeExceptionDetailInFaults=True + mex* enabled across all three TCP hosts; ACM also has httpGetEnabled=True",
+        "F-T04.5 NEW: TdmDatabaseToolsService is a SQL-anywhere proxy reachable via named pipe",
+        "F-T04.6 7 of 17 operations accept XmlDocument; all use [XmlSerializerFormat]",
+        "F-T04.7 Endpoint baseAddresses literal-hardcode decpc5932 (cosmetic)"
+      ]
+    },
+    {
+      "id": "2026-05-25-T05-script-side-bypasses",
+      "trace_area": "T05 — Script-side bypass paths",
+      "path": ".understand-anything/patches/2026-05-25-T05-script-side-bypasses.patch.json",
+      "source_doc": "docs/security-review/traces/T05-script-side-bypasses.md",
+      "node_count": 6,
+      "edge_count": 9,
+      "key_findings": [
+        "F-T05.1 env->PutEnv('TMS_USER', ...) is script-callable with no allowlist — M10 trivially exploitable",
+        "F-T05.2 OnInclude is parse-time and Object::Event-keyed, not a filesystem traversal vector",
+        "F-T05.3 tlsFile::GetPathIfExists non-TMS_SCR/TMS_MSK branch is unsafe (no `..` normalisation)",
+        "F-T05.4 TMS_SCR/TMS_MSK resolution is cache-bounded — Confirmed by T09 (was Partial pending LoadScrFileInfo recursion check)",
+        "F-T05.5 Custom\\scr overlay precedence is TMS_SCR-list-order first-match-wins"
+      ]
+    },
+    {
+      "id": "2026-05-25-T06-wcf-deserialization",
+      "trace_area": "T06 — WCF deserialization",
+      "path": ".understand-anything/patches/2026-05-25-T06-wcf-deserialization.patch.json",
+      "source_doc": "docs/security-review/traces/T06-wcf-deserialization.md",
+      "node_count": 7,
+      "edge_count": 13,
+      "key_findings": [
+        "F-T06.1 No NetDataContractSerializer usage anywhere — B6 hypothesis refuted",
+        "F-T06.2 All DataContract types flat or bounded-nested; no [KnownType] / IExtensibleDataObject on server-side types",
+        "F-T06.3 XmlSerializerFormat (strict) used for all XmlDocument operations",
+        "F-T06.4 No object/Type/Stream parameters on the wire",
+        "F-T06.5 IDatabseImportExport Sql*Command DataMembers carry raw SQL on the wire by design (separate concern)"
+      ]
+    },
+    {
+      "id": "2026-05-25-T07-wire-derived-filenames",
+      "trace_area": "T07 — Wire-derived sFileName audit",
+      "path": ".understand-anything/patches/2026-05-25-T07-wire-derived-filenames.patch.json",
+      "source_doc": "docs/security-review/traces/T07-wire-derived-filenames.md",
+      "node_count": 14,
+      "edge_count": 11,
+      "key_findings": [
+        "F-T07.1 REFUTED — zero wire-derived $VAR reaches any tFile/tDir/tSystem/tSoc.CallScript constructor in any T04-WCF-reachable script (verified against amended 114-hit / 57-file corpus)",
+        "F-T07.2 Custom-overlay-write attacker can retarget DB-config-derived dispatchers; cache-bounded to TMS_SCR-indexed scripts per F-T05.4",
+        "F-T07.3 16 live system->ShellExecute $VAR-splicing sites (Acc/Wis scheduler family) — script-author-level OS-cmd-injection primitive, not wire-reachable",
+        "F-T07.4 NEW — DB-driven dispatcher family (_lgmAutoGoAcknowledgeLoop, _stoStartReportService, _tmsStartReportService, _stoSendReportMail, _tmsSendReportMail, pMAN_PresetWrite, pMAN_PresetStartPolling, isapEventSimulator, plus 2 BANF report writers) enumerated; all cache-bounded but extends F-T05.5 Custom-overlay-write threat shape",
+        "Side-finding: isapEventSimulator.scr:28 raw-spliced $sEXTSYSEVENTCALLNR into outer SELECT — mask-only entry, deferred to §M9 site list",
+        "F-T05.3 stays 'theoretical from wire' — no wire-reachable instance found",
+        "Open: iSAP inbound HTTP surface, post-TDMone REST gateway, LGM/iMGM-specific entry hosts, C++ direct callers of GetPathIfExists"
+      ]
+    },
+    {
+      "id": "2026-05-25-T08-extsyseventcall-inserts",
+      "trace_area": "T08 — TMS_EXTSYSEVENTCALL insert paths",
+      "path": ".understand-anything/patches/2026-05-25-T08-extsyseventcall-inserts.patch.json",
+      "source_doc": "docs/security-review/traces/T08-extsyseventcall-inserts.md",
+      "node_count": 11,
+      "edge_count": 16,
+      "key_findings": [
+        "F-T08.1 REFUTED — no wire-driven INSERT into TMS_EXTSYSEVENTCALL; all 6 INSERT sites are mask/refint/SAD-button entries with no T04 WCF reach",
+        "F-T08.2 Defence-in-depth gap — tdt_Test_CreateExportEvent.scp:26 uses bare $(null) instead of $['] (not exploitable today; SAD callers pass mask-scope IDs)",
+        "TDMSAPConnector.exe is UPDATE-only on TMS_EXTSYSEVENTCALL (verified by grep insert Program.cs returning zero hits) — Apriso-style queue rows are integrator-side, outside this repo",
+        "F-T01.4 'queue-driven, not wire-driven' framing stands — Apriso reachability is gated by upstream queue insertion which lives outside the repo"
+      ]
+    },
+    {
+      "id": "2026-05-25-T09-loadscrfileinfo-recursion",
+      "trace_area": "T09 — LoadScrFileInfo recursion / symlink handling",
+      "path": ".understand-anything/patches/2026-05-25-T09-loadscrfileinfo-recursion.patch.json",
+      "source_doc": "docs/security-review/traces/T09-loadscrfileinfo-recursion.md",
+      "node_count": 5,
+      "edge_count": 5,
+      "key_findings": [
+        "F-T09.1 CONFIRMED — LoadScrFileInfo passes bWithSubDir=FALSE (hardcoded at tlsEnv.cpp:7338,7352); CreateFileList recursion branch unreachable; cache is strict allowlist via GetScrFileInfo with no Win32 fallback",
+        "F-T05.4 PROMOTED Partial → Confirmed — TMS_SCR/TMS_MSK resolution is cache-bounded; attacker-supplied script-names with ../ traversal cannot escape the indexed TMS_SCR tree",
+        "Caveat: LoadMskFileInfo reads SYS_READMASKFROMDIR and passes its value as bWithSubDir — if set non-zero in deployment, TMS_MSK walker recurses unbounded AND silently follows junction-directories (reparse-point filtering absent)",
+        "Reparse-point bit (FILE_ATTRIBUTE_REPARSE_POINT) extracted at tlsFile.cpp:6480 but only consumed at line 6538 to format a decorative FileAttributes string — never gates resolution"
+      ]
+    },
+    {
+      "id": "2026-05-25-T10-cocformat-wire-reachability",
+      "trace_area": "T10 — cocFORMAT wire reachability",
+      "path": ".understand-anything/patches/2026-05-25-T10-cocformat-wire-reachability.patch.json",
+      "source_doc": "docs/security-review/traces/T10-cocformat-wire-reachability.md",
+      "node_count": 4,
+      "edge_count": 3,
+      "key_findings": [
+        "F-T10.1 REFUTED — cocFORMAT wire reachability not present in shipped catalog; 27 call sites censused (25 pure-literal, 2 fed by env(TMS_UNITTRAILDIGITS) with forced `f` trailer pinning to type-2 _stprintf_s)",
+        "F-T03.3 resolved: 'wire reachability not proven' → 'wire reachability not present in shipped catalog'",
+        "F-T10.2 ADVISORY — _brtBanfReportWriteFile.scp:418 env-var format-string construction is brittle to refactor; recommend sanitize_digits() wrapper",
+        "F-T10.3 CLARIFIED — msg->Info/Error/Warning/Debug compile to cocCALLO not cocFORMAT; T03's framing was specifically about cocFORMAT (the <Value>Value Factor prefix)",
+        "Open: cocCALLO path — do kernel-side msg->Error / OnTrace / tlsFormatStr implementations call into varargs format primitive with script-supplied string in format position? (tlsMsg::Error varargs question)"
+      ]
+    },
+    {
+      "id": "2026-05-25-T11-ondofunc-capability-flags",
+      "trace_area": "T11 — Per-OnDoFunc capability-flag inventory",
+      "path": ".understand-anything/patches/2026-05-25-T11-ondofunc-capability-flags.patch.json",
+      "source_doc": "docs/security-review/traces/T11-ondofunc-capability-flags.md",
+      "node_count": 4,
+      "edge_count": 7,
+      "key_findings": [
+        "F-T11.1 CONFIRMED — zero of 84 OnDoFunc impls consult any capability/role/wire/wcf/call-origin context; tlsInterpreter context object has no slot for such information; cocCALLO dispatches unconditionally at Machine.cpp:2257",
+        "F-T11.2 F-T02.2 fully corroborated by full-registry scan across all 84 OnDoFunc impls — including high-risk surfaces (tlsHttp, tlsRestClient, tlsDatabase, tlsPython, tlsJava, tlsFtp, tlsSmtp, tlsRegistry, tlsPipe, etc.)",
+        "Natural chokepoint for TDMone per-script capability manifest: Machine.cpp:2257 (one line above the OnDoFunc call in cocCALLO) — green-field implementation"
+      ]
+    },
+    {
+      "id": "2026-05-25-T12-itdmmmstooldata-surface",
+      "trace_area": "T12 — ITdmMmsToolData operation surface",
+      "path": ".understand-anything/patches/2026-05-25-T12-itdmmmstooldata-surface.patch.json",
+      "source_doc": "docs/security-review/traces/T12-itdmmmstooldata-surface.md",
+      "node_count": 15,
+      "edge_count": 15,
+      "key_findings": [
+        "F-T12.1 REFUTED — zero of the 11 active ITdmMmsToolData [OperationContract]s queue scripts via dictMsgIdTplScrParamList.TryAdd; the WCF→script enqueue sites in TdmToolData.cs (lines 589/641/698/817/982) are all inside ITdmToolData operations",
+        "F-T12.2 NEW — StartServiceLog is an unauthenticated arbitrary-file-write primitive under LocalSystem; validation is only Path.GetDirectoryName != \"\" (line 1539); UNC, traversal, system paths all accepted; File.CreateText(sLogFileName) at line 1545",
+        "F-T12.3 NEW — MMSSet* (4 ops) forward wire-controlled XML strings outbound through IMmsToolData duplex callback channel: poisoning primitive for connected MMS clients (a Fastems-side trust delegation)",
+        "Three commented-out [OperationContract]s (MMSConnect, MMSDisconnect, MessageResult) not enumerated as active surface today",
+        "Open: F-T12.2 REST-replacement validation — does the post-WCF REST stack still expose StartServiceLog as an unauthenticated arbitrary-file-write primitive?"
+      ]
+    }
+  ],
+  "totals": {
+    "nodes_added": 111,
+    "edges_added": 122,
+    "edges_removed": 0
+  },
+  "negative_findings_recorded": [
+    "No NetDataContractSerializer / BinaryFormatter / SoapFormatter / LosFormatter / ObjectStateFormatter / TypeNameHandling anywhere in V4Kernel/src .cs",
+    "No [KnownType] on any DataContract type accepted by a server endpoint",
+    "No object/Type/Stream parameters on any [OperationContract]",
+    "No depth counter in any cocCALL* opcode case (the only ceiling is data-stack size 32768)",
+    "No 6-fixed-script scripts (p*SetToolingRequirements*.scr etc.) found in the repo — open question whether those WCF operations have any handler at all",
+    "OnInclude is not a filesystem-traversal attack surface",
+    "T07: zero wire-derived $VAR reaches tFile/tDir/tSystem/tSoc.CallScript in any T04-WCF-reachable script (114-hit corpus, 10 dispatch patterns, all classified as env-var / deploy-time local / DB-config / mask-object / literal-concat)",
+    "T08: no wire-driven INSERT into TMS_EXTSYSEVENTCALL; TDMSAPConnector is UPDATE-only (grep insert Program.cs = 0 hits); none of the 4 WCF contracts reach an INSERT",
+    "T09: LoadScrFileInfo bWithSubDir hardcoded FALSE; no reparse-point filtering but no recursion either; GetScrFileInfo strict allowlist with no Win32 fallback",
+    "T10: cocFORMAT — 27/27 shipped call sites are non-wire-reachable (25 literal, 2 env-var-derived with forced `f` trailer)",
+    "T11: 84/84 OnDoFunc impls have zero capability/role/wire/wcf/call-origin gating; tlsInterpreter context has no such slots; cocCALLO Machine.cpp:2257 dispatches unconditionally",
+    "T12: 0/11 active ITdmMmsToolData ops queue scripts; the script-enqueue sites are all in ITdmToolData operations"
+  ],
+  "outstanding_open_questions": [
+    "Do the 6 iToolingServer ops fire any script in this repo? (zero p*SetToolingRequirements*.scr matches) — still Open (T01 deferred; no follow-up trace covered this)",
+    "XML reader hardening (XXE / billion-laughs) for the XmlDocument operations downstream of WCF deserialization? (T06 Open question 1) — out of scope for T07-T12; still Open",
+    "Installer rewrite of decpc5932:8731/8732 baseAddresses? (cosmetic) — still Open",
+    "TdmDatabaseToolsService pipe ACL — confirm via accesschk on live deployment — still Open",
+    "tlsMsg::Error / OnTrace / tlsFormatStr varargs on cocCALLO path — do kernel-side host-call implementations forward the script-supplied string into a varargs format primitive in the format-string position? (raised by T10; future T-trace candidate)",
+    "SYS_READMASKFROMDIR deployment INI audit — gates the T09 TMS_MSK caveat (LoadMskFileInfo recurses unbounded AND silently follows junctions if env-var is set non-zero)",
+    "isapEventSimulator.scr:28 raw-spliced $sEXTSYSEVENTCALLNR into outer SELECT — mask-only entry today, but documents an SQLi shape on the T07 side-finding (deferred to §M9 site list / T08 was a different question)",
+    "F-T12.2 REST-replacement validation — does the post-WCF REST stack still expose StartServiceLog as an unauthenticated arbitrary-file-write primitive under the Nomad service account?",
+    "iSAP inbound HTTP surface — not enumerated in T04; _isapHttpResult.scr dispatches via globally-set $_ReturnScriptName but the inbound side that sets it was outside T07's WCF-rooted scope"
+  ],
+  "notes": "Per the plan's discipline: each F-finding is anchored to a file:line citation in its trace sub-report. Speculation that the trace could not settle is in 'Open questions' rather than 'Findings'. The prior review file has been rewritten in place from these sub-reports; the diff is auditable in git. The 2026-05-25 follow-up pass (T07-T12) resolves 7 of the 10 prior outstanding open questions and raises 4 new ones; net residual count drops from 10 to 9. F-T12.2 (StartServiceLog arbitrary-file-write under LocalSystem) is the only material new finding promoted to the briefing TL;DR."
+}

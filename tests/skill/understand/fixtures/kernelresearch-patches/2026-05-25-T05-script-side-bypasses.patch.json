@@ -1,0 +1,140 @@
+{
+  "$schema": "patch.schema.json",
+  "id": "2026-05-25-T05-script-side-bypasses",
+  "trace_area": "T05 — Script-side bypass paths",
+  "scope": "Function-level nodes and edges for the env->PutEnv $THISUSER bypass, the OnInclude callback path, and tlsFile::GetPathIfExists path-traversal handling.",
+  "source_file": "docs/security-review/traces/T05-script-side-bypasses.md",
+  "nodes_added": [
+    {
+      "id": "case:tlsEnv::OnDoFunc::PutEnv",
+      "kind": "dispatch_case",
+      "name": "tlsEnv::OnDoFunc PutEnv",
+      "file": "V4Kernel/src/V4/Tls/tlsEnv.cpp",
+      "line_start": 12392,
+      "line_end": 12407,
+      "summary": "Script-callable env->PutEnv. No allowlist on the var name. Setting TMS_USER trivially forges $THISUSER."
+    },
+    {
+      "id": "fn:tlsSocP::OnInclude",
+      "kind": "function",
+      "name": "tlsSocP::OnInclude",
+      "file": "V4Kernel/src/V4/Tls/tlsSocP.cpp",
+      "line_start": 268,
+      "line_end": 314,
+      "summary": "Parse-time #include resolver. Splits Object::Event, looks up via tlsEnv::FindObject + tlsObject::EventGet. NOT a filesystem path; not directly attacker-controllable."
+    },
+    {
+      "id": "fn:tlsFile::GetPathIfExists",
+      "kind": "function",
+      "name": "tlsFile::GetPathIfExists",
+      "file": "V4Kernel/src/V4/Tls/tlsFile.cpp",
+      "line_start": 5694,
+      "line_end": 5806,
+      "summary": "Path resolver. Three branches: TMS_MSK (cache-bounded), TMS_SCR (cache-bounded via GetScrFileInfo), all other env-vars (string-concat with no `..` normalisation)."
+    },
+    {
+      "id": "fn:tlsEnv::GetScrFileInfo",
+      "kind": "function",
+      "name": "tlsEnv::GetScrFileInfo",
+      "file": "V4Kernel/src/V4/Tls/tlsEnv.cpp",
+      "line_start": 7396,
+      "line_end": 7445,
+      "summary": "TMS_SCR resolver. Walks TMS_SCR path list in order (Custom\\scr first by default → customer overlay precedence). Matches built candidate path against m_lfileinfoScr cache (implicit allowlist of indexed files)."
+    },
+    {
+      "id": "fn:tlsEnv::GetMskFileInfo",
+      "kind": "function",
+      "name": "tlsEnv::GetMskFileInfo",
+      "file": "V4Kernel/src/V4/Tls/tlsEnv.cpp",
+      "line_start": 7156,
+      "line_end": 7220,
+      "summary": "TMS_MSK resolver. Same cache-bounded pattern as GetScrFileInfo (not deep-read in this trace)."
+    },
+    {
+      "id": "fn:tlsEnv::LoadScrFileInfo",
+      "kind": "function",
+      "name": "tlsEnv::LoadScrFileInfo",
+      "file": "V4Kernel/src/V4/Tls/tlsEnv.cpp",
+      "line_start": 7308,
+      "line_end": 7390,
+      "summary": "Builds m_lfileinfoScr at startup by scanning TMS_SCR paths. Symlink/junction-point traversal behaviour not deep-read; flagged as open question."
+    }
+  ],
+  "edges_added": [
+    {
+      "from": "case:tlsEnv::OnDoFunc::PutEnv",
+      "to": "ext:tlsPutEnv",
+      "kind": "delegates",
+      "note": "No allowlist; any var name accepted, including TMS_USER.",
+      "file": "V4Kernel/src/V4/Tls/tlsEnv.cpp",
+      "line": 12406
+    },
+    {
+      "from": "case:tlsEnv::OnDoFunc::PutEnv",
+      "to": "fn:tlsReplTool::GetTHIS",
+      "kind": "enables_bypass",
+      "note": "Setting TMS_USER changes what $THISUSER subsequently evaluates to — bypasses script-level authz checks gated on $THISUSER (existing review §M10).",
+      "file": "V4Kernel/src/V4/Tls/tlsReplTool.cpp",
+      "line": 245,
+      "conditional": "annotation_edge"
+    },
+    {
+      "from": "fn:tlsSocP::OnInclude",
+      "to": "fn:tlsEnv::FindObject",
+      "kind": "parse_time_resolves",
+      "note": "Resolves Object portion of Object::Event. Not a filesystem operation.",
+      "file": "V4Kernel/src/V4/Tls/tlsSocP.cpp",
+      "line": 290
+    },
+    {
+      "from": "fn:tlsSocP::OnInclude",
+      "to": "fn:tlsObject::EventGet",
+      "kind": "parse_time_resolves",
+      "note": "Resolves Event portion. Returns the named event's program text. Not file IO.",
+      "file": "V4Kernel/src/V4/Tls/tlsSocP.cpp",
+      "line": 293
+    },
+    {
+      "from": "fn:tlsFile::GetPathIfExists",
+      "to": "fn:tlsEnv::GetScrFileInfo",
+      "kind": "delegates_for_envvar",
+      "note": "When sEnvVar == TMS_SCR.",
+      "file": "V4Kernel/src/V4/Tls/tlsFile.cpp",
+      "line": 5730
+    },
+    {
+      "from": "fn:tlsFile::GetPathIfExists",
+      "to": "fn:tlsEnv::GetMskFileInfo",
+      "kind": "delegates_for_envvar",
+      "note": "When sEnvVar == TMS_MSK.",
+      "file": "V4Kernel/src/V4/Tls/tlsFile.cpp",
+      "line": 5722
+    },
+    {
+      "from": "fn:tlsFile::GetPathIfExists",
+      "to": "ext:WinAPI::CreateFile_or_FindFirstFile",
+      "kind": "unsafe_string_concat",
+      "note": "Non-TMS_SCR/TMS_MSK branch builds path by string concat (lines 5736-5786) and calls Exists with no traversal check. Win32 resolves `..` natively.",
+      "file": "V4Kernel/src/V4/Tls/tlsFile.cpp",
+      "line": 5755
+    },
+    {
+      "from": "fn:tlsEnv::GetScrFileInfo",
+      "to": "cache:m_lfileinfoScr",
+      "kind": "lookup_in_cache",
+      "note": "Implicit allowlist of indexed files. Built once via LoadScrFileInfo.",
+      "file": "V4Kernel/src/V4/Tls/tlsEnv.cpp",
+      "line": 7426
+    },
+    {
+      "from": "fn:tlsEnv::LoadScrFileInfo",
+      "to": "cache:m_lfileinfoScr",
+      "kind": "populates",
+      "note": "Builds the cache at startup. Recursion / symlink semantics not deep-read.",
+      "file": "V4Kernel/src/V4/Tls/tlsEnv.cpp",
+      "line": 7308
+    }
+  ],
+  "edges_removed": [],
+  "notes": "T05 resolves two of the existing review's open questions definitively: env->PutEnv is script-callable with no allowlist (M10 confirmed exploitable from any script context), and OnInclude is parse-time + object-event-keyed (not a filesystem traversal vector). It surfaces a sharper version of the M7/M11 path-traversal concern: non-TMS_SCR/TMS_MSK env-vars in GetPathIfExists have no normalisation and write-anywhere is possible if any wire-derived value reaches the sFileName argument."
+}
