@@ -60,6 +60,9 @@ export function evaluateRule(rule: LinkRule, tables: Map<string, Fact[]>): Candi
     if (i === names.length) {
       const src = binding.get(sourceFact)!.file;
       const tgt = binding.get(targetFact)!.file;
+      // Drop self-pairs: at file→file granularity a file cannot meaningfully
+      // implement/depend-on itself, so a self-edge is deterministic noise, not a candidate.
+      if (src === tgt) return;
       const key = `${src}|${tgt}`;
       if (!out.has(key)) {
         out.set(key, {

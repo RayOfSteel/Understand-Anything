@@ -73,6 +73,36 @@ describe("evaluateRule", () => {
     }));
     expect(result).toHaveLength(1);
   });
+
+  it("drops self-loop pairs but keeps legitimate cross-file edges from the same run", () => {
+    const result = evaluateRule(RULE, tables({
+      xClass: [
+        { file: "Self.cs", value: "Demo.Self" }, // interface + impl live in one file
+        { file: "Cross.xaml", value: "Demo.Cross" },
+      ],
+      attr: [
+        { file: "Self.cs", name: "Loaded", value: "OnSelf" },
+        { file: "Cross.xaml", name: "Loaded", value: "OnCross" },
+      ],
+      method: [
+        { file: "Self.cs", classFqn: "Demo.Self", name: "OnSelf" }, // source == target: self-loop
+        { file: "Cross.xaml.cs", classFqn: "Demo.Cross", name: "OnCross" },
+      ],
+    }));
+    // file→file self-edge (Self.cs -> Self.cs) is meaningless noise and must be dropped;
+    // the cross-file edge (Cross.xaml -> Cross.xaml.cs) must still be emitted.
+    expect(result).toEqual([
+      {
+        source: "file:Cross.xaml",
+        target: "file:Cross.xaml.cs",
+        type: "calls",
+        direction: "forward",
+        confidence: 0.9,
+        ruleId: "wpf.event-handler",
+        evidence: 'Loaded="OnCross" in Demo.Cross',
+      },
+    ]);
+  });
 });
 
 describe("applyCandidates", () => {
