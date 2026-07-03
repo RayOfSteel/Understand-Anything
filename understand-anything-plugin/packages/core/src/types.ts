@@ -55,7 +55,8 @@ export interface GraphNode {
 //   llm        — inferred by the LLM analysis phase
 //   rule       — produced by a generalized linker rule (phase 3)
 //   manual     — asserted by a hand-written patch file
-export type EdgeOrigin = "structural" | "llm" | "rule" | "manual";
+export const EDGE_ORIGINS = ["structural", "llm", "rule", "manual"] as const;
+export type EdgeOrigin = (typeof EDGE_ORIGINS)[number];
 
 // GraphEdge with rich relationship modeling
 export interface GraphEdge {

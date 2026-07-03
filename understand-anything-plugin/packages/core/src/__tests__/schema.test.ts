@@ -5,6 +5,7 @@ import {
   autoFixGraph,
   NODE_TYPE_ALIASES,
   EDGE_TYPE_ALIASES,
+  EdgeOriginSchema,
 } from "../schema.js";
 import type { KnowledgeGraph } from "../types.js";
 
@@ -841,5 +842,10 @@ describe("edge provenance (phase 2)", () => {
     expect(result.success).toBe(true);
     expect(result.data!.edges[0].origin).toBeUndefined();
     expect(result.data!.edges[0].ruleId).toBeUndefined();
+  });
+
+  it("derives EdgeOriginSchema from the single EDGE_ORIGINS source", async () => {
+    const { EDGE_ORIGINS } = await import("../types.js");
+    expect(EdgeOriginSchema.options).toEqual([...EDGE_ORIGINS]);
   });
 });

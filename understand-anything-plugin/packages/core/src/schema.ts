@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EDGE_ORIGINS } from "./types.js";
 
 // Edge types (35 values across 8 categories)
 export const EdgeTypeSchema = z.enum([
@@ -353,7 +354,7 @@ export function autoFixGraph(data: Record<string, unknown>): {
       // Provenance (phase 2): validate origin enum, clamp confidence
       if (e.origin !== undefined) {
         const normalized = typeof e.origin === "string" ? e.origin.toLowerCase() : "";
-        if (["structural", "llm", "rule", "manual"].includes(normalized)) {
+        if ((EdgeOriginSchema.options as readonly string[]).includes(normalized)) {
           e.origin = normalized;
         } else {
           issues.push({
@@ -428,7 +429,7 @@ export const GraphNodeSchema = z.object({
   knowledgeMeta: KnowledgeMetaSchema.optional(),
 }).passthrough();
 
-export const EdgeOriginSchema = z.enum(["structural", "llm", "rule", "manual"]);
+export const EdgeOriginSchema = z.enum(EDGE_ORIGINS);
 
 export const GraphEdgeSchema = z.object({
   source: z.string(),
