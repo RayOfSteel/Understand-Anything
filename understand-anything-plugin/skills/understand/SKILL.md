@@ -175,7 +175,7 @@ Determine whether to run a full analysis or incremental update.
    | Existing graph + unchanged commit hash | Ask the user: "The graph is up to date at this commit. Would you like to: **(a)** run a full rebuild (`--full`), **(b)** run the LLM graph reviewer (`--review`), or **(c)** do nothing?" Then follow their choice. If they pick (c), STOP. |
    | Existing graph + changed files | Incremental update (re-analyze changed files only) |
 
-   **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`, then jump directly to Phase 6 step 3.
+   **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`, then jump directly to Phase 6 step 4.
 
    For incremental updates, get the changed file list:
    ```bash
@@ -588,7 +588,18 @@ Assemble the full KnowledgeGraph JSON object:
 
 2. Write the assembled graph to `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`.
 
-3. **Check `$ARGUMENTS` for `--review` flag.** Then run the appropriate validation path:
+3. **Provenance & patches (deterministic).** Run the provenance post-pass on the assembled graph. It stamps `origin` on every edge, reclassifies importMap-backed `imports` edges as `structural`, and applies user patches from `.understand-anything/patches/`:
+
+   ```bash
+   node <SKILL_DIR>/apply-graph-patches.mjs \
+     "$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json" \
+     --scan-result "$PROJECT_ROOT/.understand-anything/intermediate/scan-result.json" \
+     --patches "$PROJECT_ROOT/.understand-anything/patches"
+   ```
+
+   Append every stderr line starting with `Warning:` to `$PHASE_WARNINGS`. If the script exits non-zero, append `"provenance step failed — graph saved without provenance"` to `$PHASE_WARNINGS` and continue: the script rewrites the graph file only on success, so the assembled graph is still intact.
+
+4. **Check `$ARGUMENTS` for `--review` flag.** Then run the appropriate validation path:
 
 ---
 
@@ -700,9 +711,9 @@ Pass these parameters in the dispatch prompt:
 
 ---
 
-4. Read `$PROJECT_ROOT/.understand-anything/intermediate/review.json`.
+5. Read `$PROJECT_ROOT/.understand-anything/intermediate/review.json`.
 
-5. **If `issues` array is non-empty:**
+6. **If `issues` array is non-empty:**
    - Review the `issues` list
    - Apply automated fixes where possible:
      - Remove edges with dangling references
@@ -711,7 +722,7 @@ Pass these parameters in the dispatch prompt:
    - Re-run the final graph validation after automated fixes
    - If critical issues remain after one fix attempt, save the graph anyway but include the warnings in the final report and mark dashboard auto-launch as skipped
 
-6. **If `issues` array is empty:** Proceed to Phase 7.
+7. **If `issues` array is empty:** Proceed to Phase 7.
 
 ---
 

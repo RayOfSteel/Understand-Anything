@@ -230,7 +230,18 @@ Perform lightweight validation (no graph-reviewer agent):
 
 1. Write the final knowledge graph to `$PROJECT_ROOT/.understand-anything/knowledge-graph.json`.
 
-2. Write updated metadata to `$PROJECT_ROOT/.understand-anything/meta.json`:
+2. Run the provenance & patch post-pass in place on the just-written graph (plugin root as resolved in step 1 of this hook):
+
+   ```bash
+   node "$PLUGIN_ROOT/skills/understand/apply-graph-patches.mjs" \
+     "$PROJECT_ROOT/.understand-anything/knowledge-graph.json" \
+     --scan-result "$PROJECT_ROOT/.understand-anything/intermediate/scan-result.json" \
+     --patches "$PROJECT_ROOT/.understand-anything/patches"
+   ```
+
+   `scan-result.json` may be absent in this flow — the script then skips reclassification but still stamps defaults and applies patches. Surface every stderr `Warning:` line in the final report; on non-zero exit report it as a warning and continue (the graph file is only rewritten on success).
+
+3. Write updated metadata to `$PROJECT_ROOT/.understand-anything/meta.json`:
    ```json
    {
      "lastAnalyzedAt": "<ISO 8601 timestamp>",
@@ -240,7 +251,7 @@ Perform lightweight validation (no graph-reviewer agent):
    }
    ```
 
-3. **Update fingerprints (LOAD-PATCH-SAVE, not OVERWRITE).**
+4. **Update fingerprints (LOAD-PATCH-SAVE, not OVERWRITE).**
 
    The most common failure mode here: writing only the freshly-computed batch entries to `fingerprints.json`, discarding every other file's fingerprint. The next auto-update then sees all those files as new (no stored fingerprint), classifies them as STRUCTURAL, and escalates to FULL_UPDATE permanently (issue #152). The script must LOAD ALL existing entries, PATCH only the re-analyzed ones, and SAVE the full dict back.
 
@@ -289,12 +300,12 @@ Perform lightweight validation (no graph-reviewer agent):
 
    The `existedAndNonEmpty && before === 0` guard catches the silent-load-failure case before it corrupts the store. If the count shrinks from N to a small number that matches the batch size, the LOAD step was skipped — abort the write rather than persist the wrong dict.
 
-4. Clean up intermediate files:
+5. Clean up intermediate files:
    ```bash
    rm -rf $PROJECT_ROOT/.understand-anything/intermediate
    ```
 
-5. Report a summary:
+6. Report a summary:
    - Files checked: N (total changed)
    - Structural changes found: N files
    - Cosmetic-only changes: N files (skipped)
