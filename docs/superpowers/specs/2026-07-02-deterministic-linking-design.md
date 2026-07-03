@@ -241,14 +241,14 @@ Eine Regel besteht aus drei Blöcken — Metadaten, Fakten, Link:
   "edge": { "type": "calls", "direction": "forward" },
   "facts": {
     "xClass": { "language": "xaml", "query": [
-      "(attribute (attribute_name) @n",
+      "(Attribute (Name) @n",
       "  (#eq? @n \"x:Class\")",
-      "  (attribute_value) @value)"
-    ] },
+      "  (AttValue) @value)"
+    ], "transform": { "value": "stripQuotes" } },
     "attr": { "language": "xaml", "query": [
-      "(attribute (attribute_name) @name",
-      "  (attribute_value) @value)"
-    ] },
+      "(Attribute (Name) @name",
+      "  (AttValue) @value)"
+    ], "transform": { "value": "stripQuotes" } },
     "method": { "builtin": "csharp.methodDecl" }
   },
   "link": {
@@ -265,7 +265,7 @@ Eine Regel besteht aus drei Blöcken — Metadaten, Fakten, Link:
 ```
 
 **Fakten-Quellen, zwei Arten:**
-- **Query-Fakten:** eine Tree-Sitter-Query pro Sprache (Sprach-ID der Language-Config); jede Match-Instanz wird ein Fakt `{ file, <capture-Name>: <Text> }`. Für direkte Syntax-Captures (Attribute, Tags, Aufrufformen).
+- **Query-Fakten:** eine Tree-Sitter-Query pro Sprache (Sprach-ID der Language-Config); jede Match-Instanz wird ein Fakt `{ file, <capture-Name>: <Text> }`. Für direkte Syntax-Captures (Attribute, Tags, Aufrufformen). Die Knotennamen im Beispiel sind die realen der XML-Grammatik v0.7.0 (`Attribute`/`Name`/`AttValue`, verifiziert gegen deren `node-types.json`); weil `AttValue` die Anführungszeichen enthält, erlaubt das Format pro Capture eine optionale deklarative Nachbehandlung `transform` — v1 kennt genau eine: `stripQuotes` (umschließende `"`/`'` entfernen).
 - **`builtin:`-Fakten (der Escape-Hatch):** engine-intern implementierte Provider für alles, was eine einzelne Query nicht ausdrücken kann — abgeleitete oder aufgelöste Werte (FQN-Stitching über Namespace-Verschachtelung, `using`-Kontext-Auflösung, Razor-Direktiven ohne reife Grammatik). Provider liegen im Plugin (Code), Regeln referenzieren sie per Name; der Katalog steht in §8.3.
 
 **Join-Sprache bewusst winzig:** `where` ist eine Konjunktion von Gleichheits-Bedingungen der Form `faktA.feld == faktB.feld` über Fakt-Felder (`file`, Capture-Namen, Provider-Felder) — kein Ausdrucks-Interpreter, keine Funktionen, keine Regex im Join. Was mehr Logik braucht, wird ein `builtin`. `source`/`target` benennen je ein Fakt-`file`; `evidence` ist ein Template mit `{fakt.feld}`-Interpolation. `edge.type` wird gegen `EdgeTypeSchema.options` validiert (Phase-②-Lehre: Patch-Kanten umgingen die Typ-Validierung); `direction` gegen das Direction-Enum inkl. Aliase.
