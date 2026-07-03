@@ -1,0 +1,78 @@
+[
+  {
+    "id": "wpf.code-behind",
+    "description": "XAML x:Class <-> C# partial class (code-behind pairing)",
+    "confidence": 1.0,
+    "edge": { "type": "implements", "direction": "forward" },
+    "facts": {
+      "xClass": {
+        "language": "xaml",
+        "query": [
+          "(Attribute (Name) @n",
+          "  (#eq? @n \"x:Class\")",
+          "  (AttValue) @value)"
+        ],
+        "transform": { "value": "stripQuotes" }
+      },
+      "cls": { "builtin": "csharp.classFqn" }
+    },
+    "link": {
+      "where": ["cls.value == xClass.value"],
+      "source": "cls.file",
+      "target": "xClass.file",
+      "evidence": "x:Class={xClass.value}"
+    }
+  },
+  {
+    "id": "wpf.event-handler",
+    "description": "XAML attribute value naming a method of the x:Class type",
+    "confidence": 0.9,
+    "edge": { "type": "calls", "direction": "forward" },
+    "facts": {
+      "xClass": {
+        "language": "xaml",
+        "query": [
+          "(Attribute (Name) @n",
+          "  (#eq? @n \"x:Class\")",
+          "  (AttValue) @value)"
+        ],
+        "transform": { "value": "stripQuotes" }
+      },
+      "attr": {
+        "language": "xaml",
+        "query": [
+          "(Attribute (Name) @name",
+          "  (AttValue) @value)"
+        ],
+        "transform": { "value": "stripQuotes" }
+      },
+      "method": { "builtin": "csharp.methodDecl" }
+    },
+    "link": {
+      "where": [
+        "attr.file == xClass.file",
+        "method.classFqn == xClass.value",
+        "method.name == attr.value"
+      ],
+      "source": "attr.file",
+      "target": "method.file",
+      "evidence": "{attr.name}=\"{attr.value}\" in {xClass.value}"
+    }
+  },
+  {
+    "id": "wpf.xmlns-viewmodel",
+    "description": "Prefixed type usage via clr-namespace xmlns mapping",
+    "confidence": 0.8,
+    "edge": { "type": "depends_on", "direction": "forward" },
+    "facts": {
+      "usage": { "builtin": "xaml.typeUsage" },
+      "cls": { "builtin": "csharp.classFqn" }
+    },
+    "link": {
+      "where": ["cls.value == usage.value"],
+      "source": "usage.file",
+      "target": "cls.file",
+      "evidence": "uses {usage.value} in markup"
+    }
+  }
+]

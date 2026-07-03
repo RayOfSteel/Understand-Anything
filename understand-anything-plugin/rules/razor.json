@@ -1,0 +1,34 @@
+[
+  {
+    "id": "razor.inject",
+    "description": "@inject directive to the declaring C# file",
+    "confidence": 0.9,
+    "edge": { "type": "depends_on", "direction": "forward" },
+    "facts": {
+      "inj": { "builtin": "razor.inject" },
+      "cls": { "builtin": "csharp.classFqn" }
+    },
+    "link": {
+      "where": ["cls.value == inj.typeFqn"],
+      "source": "inj.file",
+      "target": "cls.file",
+      "evidence": "@inject {inj.typeName}"
+    }
+  },
+  {
+    "id": "razor.component-tag",
+    "description": "PascalCase component tag to the component file",
+    "confidence": 0.9,
+    "edge": { "type": "depends_on", "direction": "forward" },
+    "facts": {
+      "tag": { "builtin": "razor.componentTag" },
+      "decl": { "builtin": "razor.componentDecl" }
+    },
+    "link": {
+      "where": ["tag.name == decl.name"],
+      "source": "tag.file",
+      "target": "decl.file",
+      "evidence": "<{tag.name}>"
+    }
+  }
+]

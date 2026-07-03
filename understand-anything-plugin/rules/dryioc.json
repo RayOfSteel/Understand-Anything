@@ -1,0 +1,35 @@
+[
+  {
+    "id": "dryioc.implements",
+    "description": "Register<TService, TImpl>() proves the implementation relation",
+    "confidence": 1.0,
+    "edge": { "type": "implements", "direction": "forward" },
+    "facts": {
+      "reg": { "builtin": "csharp.registration" },
+      "impl": { "builtin": "csharp.classFqn" },
+      "svc": { "builtin": "csharp.classFqn" }
+    },
+    "link": {
+      "where": ["impl.value == reg.implFqn", "svc.value == reg.serviceFqn"],
+      "source": "impl.file",
+      "target": "svc.file",
+      "evidence": "Register<{reg.serviceFqn}, {reg.implFqn}>"
+    }
+  },
+  {
+    "id": "dryioc.registration",
+    "description": "Composition root configures the registered implementation",
+    "confidence": 1.0,
+    "edge": { "type": "configures", "direction": "forward" },
+    "facts": {
+      "reg": { "builtin": "csharp.registration" },
+      "impl": { "builtin": "csharp.classFqn" }
+    },
+    "link": {
+      "where": ["impl.value == reg.implFqn"],
+      "source": "reg.file",
+      "target": "impl.file",
+      "evidence": "registers {reg.implFqn}"
+    }
+  }
+]
