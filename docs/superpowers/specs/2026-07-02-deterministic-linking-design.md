@@ -1,7 +1,7 @@
 # Design: Deterministische Verbindungsschicht für Understand-Anything
 
 **Datum:** 2026-07-02
-**Status:** Entwurf, Phase ① detailliert und freigegeben
+**Status:** Phase ① umgesetzt und gemessen; Phase ② detailliert und freigegeben (2026-07-03)
 **Prüfstein:** MachineSIC-Graph (`MachineSIC/.understand-anything/knowledge-graph.json`, 208 Dateien, 626 Nodes, 920 Edges)
 
 ## 1. Kontext und Motivation
@@ -49,7 +49,7 @@ Abhängigkeiten: ③ setzt ② voraus (Linker-Kanten brauchen Provenance ab dem 
 1. **Regelformat für Linker** (Phase ③): deklarative JSON-Regeln mit generischer Engine vs. TypeScript-Code-Linker vs. Hybrid. Tendenz aus der Diskussion: deklarativ mit engine-interner Linker-Schnittstelle als Escape-Hatch — **nicht final entschieden**.
 2. **Fork vs. Upstream-Contribution** — **entschieden (2026-07-02): Fork.** Entwicklung auf dem eigenen Branch (`myMaster`); bestehende Konventionen (TypeScript strict, Vitest, ESM) werden beibehalten, weil sie der Wartbarkeit dienen, nicht wegen Upstream-Kompatibilität. Eine spätere Upstream-Contribution einzelner Phasen bleibt möglich, ist aber kein Gestaltungsziel.
 3. **Ablageort projektspezifischer Regeln** (Phase ③/④): im Plugin ausgeliefert vs. `.understand-anything/rules/` im Ziel-Repo. Sicherheitsrelevant, falls Regeln Code enthalten dürften.
-4. **Formalisierung des vorhandenen Ad-hoc-Patch-Formats** (Phase ②): In Nutzer-Repos existieren bereits handgeschriebene `.understand-anything/patches/*.patch.json` (`edges_to_add`/`edges_to_remove` + `_meta.rationale`) — Kandidat für das offizielle Patch-/Provenance-Format.
+4. **Formalisierung des vorhandenen Ad-hoc-Patch-Formats** — **entschieden (2026-07-03): formalisieren + maschinell anwenden.** Das Ad-hoc-Format wird als offizielles Einzelfall-Patch-Format übernommen (bestehende Dateien bleiben unverändert gültig) und von einem Apply-Schritt in der Pipeline angewendet. Details in §7.2/§7.3. Generalisierte Muster-Regeln bleiben Phase ③.
 
 ## 5. Phase ① im Detail: C#-Namespace-Resolver (freigegeben)
 
@@ -98,7 +98,7 @@ XAML/Razor/DI-Verbindungen (Phase ③), Provenance (Phase ②), `global using`-P
 
 ## 6. Phasen ②–⑤ im Rahmen
 
-**② Provenance:** Kanten erhalten additive Felder `origin` (`"structural" | "llm" | "rule"`), `ruleId?`, `confidence?`, `evidence?`. Merge-Script und Schema-Validierung setzen/erhalten sie; Dashboard zeigt sie in der NodeInfo/Kanten-Ansicht an. Das vorhandene Ad-hoc-Patch-Format (Weggabelung 4) wird hier formalisiert.
+**② Provenance:** Kanten erhalten additive Felder `origin` (`"structural" | "llm" | "rule" | "manual"`), `ruleId?`, `confidence?`, `evidence?`. Merge-Script und Schema-Validierung setzen/erhalten sie; Dashboard zeigt sie in der NodeInfo/Kanten-Ansicht an. Das vorhandene Ad-hoc-Patch-Format (Weggabelung 4) wird hier formalisiert und maschinell angewendet. Detail in §7.
 
 **③ Linker-Infrastruktur + WPF-Pack:** Neue deterministische Pipeline-Phase nach dem Merge. Erste Regeln: XAML↔Code-behind über `x:Class`/Dateikonvention (mechanisch), XAML-Event-Attribut → Handler-Methode, XAML→ViewModel über `DataContext`/Bindings (heuristisch, niedrigere confidence), Razor `@inject`/Komponenten-Tags, DryIoc-Registrierung → `implements`/`depends_on`. Voraussetzungen: `.xaml` in XML-Config + XML/XAML-Grammatik aktivieren, XAML-Extractor. Regelformat = Weggabelung 1.
 
@@ -106,6 +106,97 @@ XAML/Razor/DI-Verbindungen (Phase ③), Provenance (Phase ②), `global using`-P
 
 **⑤ Feedback-Loop:** Vom Dashboard aus („Kante ist falsch") über die Provenance aus ② zur verursachenden Regel; Agent schärft Scope/Validierung der Regel und erzeugt einen Regressionsfall.
 
-## 7. Messbasis MachineSIC (Ist-Stand 2026-07-02)
+## 7. Phase ② im Detail: Provenance und Einzelfall-Patches (freigegeben)
+
+### 7.1 Datenmodell
+
+`GraphEdge` (`packages/core/src/types.ts`) erhält vier additive, optionale Felder:
+
+```ts
+export type EdgeOrigin = "structural" | "llm" | "rule" | "manual";
+
+export interface GraphEdge {
+  // ... bestehende Felder unverändert ...
+  origin?: EdgeOrigin;   // wer hat die Kante erzeugt
+  ruleId?: string;       // manual: Patch-Dateiname; rule (ab Phase ③): Regel-ID
+  confidence?: number;   // 0–1: Sicherheit, DASS die Kante existiert
+  evidence?: string;     // menschenlesbarer Beleg (z. B. note aus dem Patch)
+}
+```
+
+Taxonomie (entschieden 2026-07-03): `structural` = deterministisch aus Analyse abgeleitet (importMap-Abgleich, Pfadkonventions-Linker), `llm` = LLM-Schluss, `rule` = generalisierte Linker-Regel (ab Phase ③), `manual` = handkuratierte Einzelfall-Behauptung aus einem Patch. Die Polarität (hinzufügen/entfernen) ist **keine** origin-Eigenschaft — sie lebt im Patch-/Regelformat; `origin` beschreibt nur existierende Kanten.
+
+Abgrenzung `confidence` vs. `weight`: `weight` behält seine bestehende Semantik (Stärke/Wichtigkeit der Beziehung, wird vom Layout genutzt); `confidence` ist epistemisch — wie sicher ist die Existenz der Kante. Deterministische Herkünfte (`structural`, `manual`) tragen `confidence: 1.0`; bei `llm`-Kanten bleibt das Feld in Phase ② ungesetzt (keine Scheinzahlen — Kalibrierung wäre Phase-⑤-Arbeit).
+
+Schema (`packages/core/src/schema.ts`): Die vier Felder werden **explizit** im `GraphEdgeSchema` deklariert — kein pauschales `.passthrough()`, damit Tippfehler-Felder weiterhin draußen bleiben und `origin` enum-validiert wird. `autoFixGraph` behandelt sie analog `weight`: ungültiger `origin`-Wert → Feld entfernen + auto-corrected-Issue; `confidence` wird auf [0, 1] geklemmt. `validateGraph` reicht die Felder beim Neuzusammenbau des Graph-Objekts durch (heute gehen unbekannte Kantenfelder genau dort verloren — dazu ein Regressionstest). Alte Graphen ohne die Felder validieren unverändert.
+
+### 7.2 Patch-Format (formalisiertes Ad-hoc-Format)
+
+Die 15 vorhandenen handgeschriebenen Dateien in Nutzer-Repos bleiben **unverändert gültig** (Akzeptanzkriterium; sie dienen als Test-Fixtures):
+
+```json
+{
+  "_meta": { "title": "...", "rationale": "...", "created": "YYYY-MM-DD" },
+  "edges_to_add": [
+    { "source": "file:...", "target": "file:...", "type": "imports",
+      "direction": "outgoing", "weight": 1.0, "note": "..." }
+  ],
+  "edges_to_remove": [
+    { "source": "file:...", "target": "file:...", "type": "imports", "reason": "..." }
+  ]
+}
+```
+
+- **Ablage:** `.understand-anything/patches/*.patch.json` im analysierten Repo (bestehende Konvention). Reine Daten, kein Code — Weggabelung 3 (Sicherheit bei Code in Regeln) stellt sich hier nicht.
+- **Normalisierung:** `direction: "outgoing"` → `forward`, `"incoming"` → `backward` (neue Einträge in `DIRECTION_ALIASES`); Edge-Typ-Aliase gelten wie überall.
+- **Provenance beim Anwenden:** hinzugefügte Kanten erhalten `origin: "manual"`, `ruleId: <Patch-Dateiname>`, `confidence: 1.0`, `evidence: <note>`.
+- **Entfernen** matcht exakt auf `(source, target, type)` nach Alias-Normalisierung. Keine Suppressions-Liste im Graphen (entschieden 2026-07-03): Die versionierten Patch-Dateien selbst sind die dauerhafte Dokumentation der Entfernungen samt Begründung; der Apply-Schritt protokolliert Entfernungen nur in seinem Report-Output.
+- **Determinismus:** Patch-Dateien alphabetisch; pro Datei erst `edges_to_remove`, dann `edges_to_add`.
+- **Erweiterbarkeit:** Das Format ist so angelegt, dass Phase ③ es um Muster-Regeln erweitern kann, ohne bestehende Dateien zu brechen (neue Top-Level-Abschnitte, keine Umdeutung vorhandener Felder).
+
+### 7.3 Pipeline und Datenfluss (entschieden: Nachlauf-Script, Ansatz A)
+
+Grundsatz: **Jeder deterministische Erzeuger stempelt seine eigenen Kanten** beim Erzeugen; ein Nachlauf-Script übernimmt Reklassifikation, Default und Patch-Apply.
+
+**Neues Script `skills/understand/apply-graph-patches.mjs`** (lädt Core aus `dist/`, nur stderr-Logging, Per-Item-Resilienz, deterministische Verarbeitung):
+
+```
+node apply-graph-patches.mjs <graph.json> [--import-map <pfad>] [--patches <verzeichnis>]
+```
+
+Drei Schritte in fester Reihenfolge:
+1. **Reklassifikation `structural`:** Jede `imports`-Kante zwischen zwei `file:`-Knoten, deren Zielpfad in `importMap[quellpfad]` steht, wird zu `origin: "structural"`, `confidence: 1.0`. Ohne `--import-map` entfällt der Schritt (Standalone-Modus). Bereits von einem Erzeuger gestempelte Kanten bleiben unangetastet.
+2. **Default:** Jede Kante ohne `origin` erhält `origin: "llm"` — die Messgröße „jede Kante trägt Herkunft" ist damit strukturell garantiert.
+3. **Patch-Apply:** Dateien aus `--patches` (Default: das Verzeichnis `patches/` neben der Graph-Datei, d. h. `<repo>/.understand-anything/patches/`) gemäß §7.2. Existiert eine hinzuzufügende Kante bereits, wird sie nicht dupliziert, sondern auf `manual`-Provenance hochgestuft (menschliche Behauptung = stärkerer Beleg); `description` bleibt erhalten. Fehlt ein referenzierter Knoten, wird der Eintrag mit Warnung übersprungen — Patches dürfen den Lauf nie abbrechen.
+
+**Idempotenz ist Vertragsbestandteil:** Zweimaliges Anwenden auf denselben Graphen erzeugt byte-identischen Output.
+
+**Einbettung:**
+- `merge-batch-graphs.py` stempelt seine selbst erzeugten Pass-2-`tested_by`-Kanten mit `origin: "structural"`, `evidence: "path convention"` (lokale Änderung).
+- `/understand` (SKILL.md) persistiert den importMap als `import-map.json` ins Intermediate-Verzeichnis und ruft das Script nach dem Graph-Review als letzten Schritt vor dem finalen Schreiben auf.
+- `/understand-diff --auto-update` ruft dasselbe Script nach dem inkrementellen Merge auf — Patches überleben auch Inkrementalläufe.
+
+**Konfliktregel bei Dedup:** Liefern mehrere Quellen dieselbe Kante `(source, target, type)`, gilt die Provenance-Priorität `manual > structural > rule > llm`; die `description` des LLM bleibt als Zusatzinformation erhalten.
+
+### 7.4 Dashboard
+
+Minimal gemäß Rahmen: In der Connections-Liste von `NodeInfo.tsx` erhält jede Kante ein kleines Origin-Badge (vier Farben, konsistent mit dem Theme) mit `title`-Tooltip für `ruleId`, `confidence`, `evidence`, sofern vorhanden. Kanten ohne `origin` (alte Graphen) zeigen kein Badge — kein Fehler, keine Layoutlücke. Ein Origin-Filter im FilterPanel ist Nicht-Ziel.
+
+### 7.5 Fehlerbehandlung
+
+Ungültige Patch-Datei (kaputtes JSON, fehlende Pflichtfelder) → Warnung auf stderr + Datei überspringen. Unbekannter Knoten → Eintrag überspringen. Kein Patches-Verzeichnis → No-op ohne Fehler. Alte Graphen ohne Provenance-Felder validieren unverändert.
+
+### 7.6 Verifikation und Messgröße
+
+- **Core-Tests:** `validateGraph` reicht die vier Felder durch (Regressionstest gegen den Verlust beim Neuzusammenbau); ungültige Werte werden auto-korrigiert; alte Graphen bleiben gültig.
+- **Script-Tests:** add/remove/Upgrade vorhandener Kanten/Reklassifikation/Idempotenz/kaputte Patch-Dateien; die 15 realen KernelResearch-Patches als Fixtures — alle müssen ohne Änderung durchlaufen.
+- **Merge-Script-Test:** Pass-2-`tested_by`-Kanten tragen den `structural`-Stempel.
+- **Messgröße am Prüfstein (MachineSIC):** 100 % der Kanten tragen `origin`; die ≈ 418 `imports`-Kanten aus Phase ① werden als `structural` klassifiziert; der Abschlussbericht weist die Verteilung `structural`/`llm`/`manual` aus. Zweitprüfstein KernelResearch: alle 15 Patches wenden sauber an.
+
+### 7.7 Nicht-Ziele von Phase ②
+
+Generalisierte Muster-Regeln und Linker-Engine (Phase ③), Suppressions-Liste im Graphen, Origin-Filter im FilterPanel, confidence-Kalibrierung für LLM-Kanten (Phase ⑤), Änderungen an den LLM-Agenten-Prompts.
+
+## 8. Messbasis MachineSIC (Ist-Stand 2026-07-02)
 
 920 Kanten: 419 contains, 233 exports, 92 calls, 88 depends_on, 35 configures, 22 implements, 12 related, 7 tested_by, 5 triggers, 5 inherits, 2 documents, **0 imports**. 79/147 C#-Dateien nur contains/exports. XAML: 9 Views, ø 1,0 Kanten, 1/9 Code-behind-Paarung, 0 Event-Handler-Kanten. 3/3 `.resx` isoliert.
