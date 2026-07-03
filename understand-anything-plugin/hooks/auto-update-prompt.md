@@ -230,7 +230,7 @@ Perform lightweight validation (no graph-reviewer agent):
 
 1. Write the final knowledge graph to `$PROJECT_ROOT/.understand-anything/knowledge-graph.json`.
 
-2. Run the deterministic linker on the freshly written graph (before the patch step, so manual patches keep the last word):
+2. Run the deterministic linker on the freshly written graph (before the patch step, so manual patches keep the last word). This is the first post-merge script, so it must resolve `$PLUGIN_ROOT` itself. If `$PLUGIN_ROOT` is not yet resolved (Step 0 point 9 only resolves it when `.understandignore` handling runs), resolve it now the same way: use `$CLAUDE_PLUGIN_ROOT` if set, otherwise `$HOME/.understand-anything-plugin`, and validate that `$candidate/skills/understand/apply-link-rules.mjs` exists. If neither candidate resolves, do **not** abort at this late stage — the graph is already written and valid. Report "Warning: apply-link-rules skipped: cannot locate plugin install at `$CLAUDE_PLUGIN_ROOT` or `$HOME/.understand-anything-plugin`" in the final summary (no silent skip) and continue with the patch step below.
 
    ```bash
    node "$PLUGIN_ROOT/skills/understand/apply-link-rules.mjs" \
@@ -239,7 +239,7 @@ Perform lightweight validation (no graph-reviewer agent):
 
    Surface every stderr `Warning:` line in the final report; on non-zero exit report it as a warning and continue (the graph file is only rewritten on success).
 
-3. Run the provenance & patch post-pass in place on the just-written graph. If `$PLUGIN_ROOT` is not yet resolved (Step 0 point 9 only resolves it when `.understandignore` handling runs), resolve it now the same way: use `$CLAUDE_PLUGIN_ROOT` if set, otherwise `$HOME/.understand-anything-plugin`, and validate that `$candidate/skills/understand/apply-graph-patches.mjs` exists. If neither candidate resolves, do **not** abort at this late stage — the graph is already written and valid. Report "Warning: apply-graph-patches skipped: cannot locate plugin install at `$CLAUDE_PLUGIN_ROOT` or `$HOME/.understand-anything-plugin`" in the final summary (no silent skip) and continue with the meta.json step below.
+3. Run the provenance & patch post-pass in place on the just-written graph. Point 2 above normally resolves `$PLUGIN_ROOT` already, but keep this guard as an idempotent safety net in case this step is reached independently: if `$PLUGIN_ROOT` is not yet resolved (Step 0 point 9 only resolves it when `.understandignore` handling runs), resolve it now the same way: use `$CLAUDE_PLUGIN_ROOT` if set, otherwise `$HOME/.understand-anything-plugin`, and validate that `$candidate/skills/understand/apply-graph-patches.mjs` exists. If neither candidate resolves, do **not** abort at this late stage — the graph is already written and valid. Report "Warning: apply-graph-patches skipped: cannot locate plugin install at `$CLAUDE_PLUGIN_ROOT` or `$HOME/.understand-anything-plugin`" in the final summary (no silent skip) and continue with the meta.json step below.
 
    ```bash
    node "$PLUGIN_ROOT/skills/understand/apply-graph-patches.mjs" \
