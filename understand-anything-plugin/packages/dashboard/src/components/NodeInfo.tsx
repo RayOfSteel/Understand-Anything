@@ -43,6 +43,30 @@ function getDirectionalLabel(edgeType: string, isSource: boolean, t: ReturnType<
   return isSource ? labels.forward : labels.backward;
 }
 
+// Phase 2 provenance badge colors, one per EdgeOrigin value.
+const ORIGIN_BADGE_STYLES: Record<string, string> = {
+  structural: "text-emerald-300 border-emerald-300/30 bg-emerald-300/10",
+  llm: "text-text-muted border-border-subtle bg-transparent",
+  rule: "text-sky-300 border-sky-300/30 bg-sky-300/10",
+  manual: "text-gold border-gold/40 bg-gold/10",
+};
+
+function originTooltip(edge: {
+  origin?: string;
+  ruleId?: string;
+  confidence?: number;
+  evidence?: string;
+}): string {
+  return [
+    `origin: ${edge.origin}`,
+    edge.ruleId ? `rule: ${edge.ruleId}` : null,
+    edge.confidence !== undefined ? `confidence: ${edge.confidence}` : null,
+    edge.evidence ? `evidence: ${edge.evidence}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function KnowledgeNodeDetails({ node, graph }: { node: GraphNode; graph: KnowledgeGraph }) {
   const navigateToNode = useDashboardStore((s) => s.navigateToNode);
   const { t } = useI18n();
@@ -528,6 +552,16 @@ export default function NodeInfo() {
                   <span className="text-text-primary truncate">
                     {otherNode?.name ?? otherId}
                   </span>
+                  {edge.origin && (
+                    <span
+                      className={`ml-auto shrink-0 text-[9px] font-semibold uppercase tracking-wider rounded px-1.5 py-0.5 border ${
+                        ORIGIN_BADGE_STYLES[edge.origin] ?? ORIGIN_BADGE_STYLES.llm
+                      }`}
+                      title={originTooltip(edge)}
+                    >
+                      {edge.origin}
+                    </span>
+                  )}
                 </div>
               );
             })}
