@@ -63,6 +63,9 @@ importers:
       '@understand-anything/tree-sitter-dart-wasm':
         specifier: workspace:*
         version: link:../tree-sitter-dart-wasm
+      '@understand-anything/tree-sitter-xml-wasm':
+        specifier: workspace:*
+        version: link:../tree-sitter-xml-wasm
       fuse.js:
         specifier: ^7.1.0
         version: 7.1.0
@@ -202,6 +205,8 @@ importers:
         version: 3.2.4(@types/debug@4.1.12)(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3)
 
   understand-anything-plugin/packages/tree-sitter-dart-wasm: {}
+
+  understand-anything-plugin/packages/tree-sitter-xml-wasm: {}
 
 packages:
 
@@ -1283,6 +1288,7 @@ packages:
 
   '@ungap/structured-clone@1.3.0':
     resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
+    deprecated: Potential CWE-502 - Update to 1.3.1 or higher
 
   '@vitejs/plugin-react@4.7.0':
     resolution: {integrity: sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA==}

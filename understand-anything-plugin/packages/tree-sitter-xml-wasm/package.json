@@ -1,0 +1,9 @@
+{
+  "name": "@understand-anything/tree-sitter-xml-wasm",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Vendored tree-sitter-xml WASM grammar (release asset of tree-sitter-grammars/tree-sitter-xml v0.7.0) for use with web-tree-sitter@^0.26.",
+  "main": "tree-sitter-xml.wasm",
+  "files": ["tree-sitter-xml.wasm", "BUILD.md"],
+  "license": "MIT"
+}

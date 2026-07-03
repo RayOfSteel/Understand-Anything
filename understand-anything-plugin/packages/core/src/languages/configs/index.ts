@@ -21,6 +21,7 @@ import { jsonConfigConfig } from "./json-config.js";
 import { tomlConfig } from "./toml.js";
 import { envConfig } from "./env.js";
 import { xmlConfig } from "./xml.js";
+import { xamlConfig } from "./xaml.js";
 import { dockerfileConfig } from "./dockerfile.js";
 import { sqlConfig } from "./sql.js";
 import { graphqlConfig } from "./graphql.js";
@@ -66,6 +67,7 @@ export const builtinLanguageConfigs: LanguageConfig[] = [
   tomlConfig,
   envConfig,
   xmlConfig,
+  xamlConfig,
   dockerfileConfig,
   sqlConfig,
   graphqlConfig,
@@ -112,6 +114,7 @@ export {
   tomlConfig,
   envConfig,
   xmlConfig,
+  xamlConfig,
   dockerfileConfig,
   sqlConfig,
   graphqlConfig,
