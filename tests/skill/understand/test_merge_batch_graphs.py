@@ -9,7 +9,9 @@ Run from the repo root:
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -1181,6 +1183,74 @@ class TestUnrecognizedBatchFilename(unittest.TestCase):
         node_ids = {n["id"] for n in assembled["nodes"]}
         self.assertNotIn("file:src/x.ts", node_ids)
         self.assertNotIn("file:src/y.ts", node_ids)
+
+
+# ── Provenance stamps (phase 2) ───────────────────────────────────────────
+
+class Pass2ProvenanceTests(unittest.TestCase):
+    """Pass-2 supplements are deterministic producers and stamp themselves."""
+
+    def test_pass2_supplement_carries_structural_origin(self) -> None:
+        nodes_by_id = {
+            "file:src/foo.ts": _file_node("src/foo.ts"),
+            "file:src/foo.test.ts": _file_node("src/foo.test.ts"),
+        }
+        edges: list[dict[str, Any]] = []
+
+        added, _dropped, _tagged, _swapped = mbg.link_tests(nodes_by_id, edges)
+
+        self.assertEqual(added, 1)
+        edge = edges[0]
+        self.assertEqual(edge["origin"], "structural")
+        self.assertEqual(edge["evidence"], "path convention")
+
+    def test_pass1_kept_llm_edges_stay_unstamped(self) -> None:
+        # LLM-asserted pairings keep their (absent) origin — the apply
+        # script defaults them to "llm" later.
+        nodes_by_id = {
+            "file:src/foo.ts": _file_node("src/foo.ts"),
+            "file:src/foo.test.ts": _file_node("src/foo.test.ts"),
+        }
+        edges: list[dict[str, Any]] = [
+            {
+                "source": "file:src/foo.ts",
+                "target": "file:src/foo.test.ts",
+                "type": "tested_by",
+                "direction": "forward",
+                "weight": 0.9,
+            }
+        ]
+
+        mbg.link_tests(nodes_by_id, edges)
+
+        self.assertEqual(len(edges), 1)
+        self.assertNotIn("origin", edges[0])
+
+
+class RecoverImportsProvenanceTests(unittest.TestCase):
+    """Recovered importMap edges are structural by construction."""
+
+    def test_recovered_edges_carry_structural_origin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            scan_path = Path(tmp) / "scan-result.json"
+            scan_path.write_text(
+                json.dumps({"importMap": {"a.cs": ["b.cs"]}}), encoding="utf-8"
+            )
+            assembled: dict[str, Any] = {
+                "nodes": [
+                    {"id": "file:a.cs", "type": "file"},
+                    {"id": "file:b.cs", "type": "file"},
+                ],
+                "edges": [],
+            }
+
+            recovered, _lines = mbg.recover_imports_from_scan(assembled, scan_path)
+
+            self.assertEqual(recovered, 1)
+            edge = assembled["edges"][0]
+            self.assertEqual(edge["origin"], "structural")
+            self.assertEqual(edge["confidence"], 1.0)
+            self.assertTrue(edge["recoveredFromImportMap"])
 
 
 if __name__ == "__main__":

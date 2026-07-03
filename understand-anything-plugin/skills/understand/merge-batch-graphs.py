@@ -701,6 +701,8 @@ def link_tests(
                 "direction": "forward",
                 "weight": 0.5,
                 "description": "Path-based pairing (deterministic)",
+                "origin": "structural",
+                "evidence": "path convention",
             })
             covered.add(pair)
             added += 1
@@ -976,6 +978,8 @@ def recover_imports_from_scan(
                 "direction": "forward",
                 "weight": 0.7,
                 "recoveredFromImportMap": True,
+                "origin": "structural",
+                "confidence": 1.0,
             })
             existing.add((src_id, tgt_id))
             recovered += 1
