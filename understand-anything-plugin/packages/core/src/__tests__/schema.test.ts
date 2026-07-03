@@ -727,3 +727,119 @@ describe("Extended node/edge types", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("edge provenance (phase 2)", () => {
+  // Minimal valid graph with one fully-stamped edge. Returned as `any` so
+  // individual tests can poke invalid values into fields without casts.
+  const provenanceGraph = (): any => ({
+    version: "1.0.0",
+    project: {
+      name: "p",
+      languages: [],
+      frameworks: [],
+      description: "",
+      analyzedAt: "2026-01-01T00:00:00Z",
+      gitCommitHash: "abc",
+    },
+    nodes: [
+      { id: "file:a.cs", type: "file", name: "a.cs", summary: "s", tags: [], complexity: "simple" },
+      { id: "file:b.cs", type: "file", name: "b.cs", summary: "s", tags: [], complexity: "simple" },
+    ],
+    edges: [
+      {
+        source: "file:a.cs",
+        target: "file:b.cs",
+        type: "imports",
+        direction: "forward",
+        weight: 0.7,
+        origin: "structural",
+        ruleId: "r1",
+        confidence: 1.0,
+        evidence: "using X",
+      },
+    ],
+    layers: [],
+    tour: [],
+  });
+
+  it("preserves origin/ruleId/confidence/evidence through validateGraph", () => {
+    const result = validateGraph(provenanceGraph());
+    expect(result.success).toBe(true);
+    const edge = result.data!.edges[0];
+    expect(edge.origin).toBe("structural");
+    expect(edge.ruleId).toBe("r1");
+    expect(edge.confidence).toBe(1.0);
+    expect(edge.evidence).toBe("using X");
+  });
+
+  it("removes an invalid origin value with an auto-corrected issue", () => {
+    const graph = provenanceGraph();
+    graph.edges[0].origin = "guessed";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.edges[0].origin).toBeUndefined();
+    expect(
+      result.issues.some(
+        (i) => i.level === "auto-corrected" && i.path === "edges[0].origin",
+      ),
+    ).toBe(true);
+  });
+
+  it("clamps out-of-range confidence into [0, 1]", () => {
+    const graph = provenanceGraph();
+    graph.edges[0].confidence = 1.5;
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.edges[0].confidence).toBe(1);
+    expect(result.issues.some((i) => i.path === "edges[0].confidence")).toBe(true);
+  });
+
+  it("drops a non-numeric confidence with an issue", () => {
+    const graph = provenanceGraph();
+    graph.edges[0].confidence = "high";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.edges[0].confidence).toBeUndefined();
+    expect(result.issues.some((i) => i.path === "edges[0].confidence")).toBe(true);
+  });
+
+  it("maps the ad-hoc direction alias outgoing to forward", () => {
+    const graph = provenanceGraph();
+    graph.edges[0].direction = "outgoing";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.edges[0].direction).toBe("forward");
+  });
+
+  it("maps the ad-hoc direction alias incoming to backward", () => {
+    const graph = provenanceGraph();
+    graph.edges[0].direction = "incoming";
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.edges[0].direction).toBe("backward");
+  });
+
+  it("keeps provenance-free graphs valid without new issues", () => {
+    const graph = provenanceGraph();
+    delete graph.edges[0].origin;
+    delete graph.edges[0].ruleId;
+    delete graph.edges[0].confidence;
+    delete graph.edges[0].evidence;
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.edges[0].origin).toBeUndefined();
+    expect(result.issues).toHaveLength(0);
+  });
+
+  it("deletes null provenance fields during sanitize", () => {
+    const graph = provenanceGraph();
+    graph.edges[0].origin = null;
+    graph.edges[0].ruleId = null;
+    graph.edges[0].confidence = null;
+    graph.edges[0].evidence = null;
+    const result = validateGraph(graph);
+    expect(result.success).toBe(true);
+    expect(result.data!.edges[0].origin).toBeUndefined();
+    expect(result.data!.edges[0].ruleId).toBeUndefined();
+  });
+});

@@ -50,6 +50,13 @@ export interface GraphNode {
   knowledgeMeta?: KnowledgeMeta;
 }
 
+// Edge provenance (phase 2): who asserted this edge.
+//   structural — deterministically derived (import map, path convention)
+//   llm        — inferred by the LLM analysis phase
+//   rule       — produced by a generalized linker rule (phase 3)
+//   manual     — asserted by a hand-written patch file
+export type EdgeOrigin = "structural" | "llm" | "rule" | "manual";
+
 // GraphEdge with rich relationship modeling
 export interface GraphEdge {
   source: string;
@@ -58,6 +65,10 @@ export interface GraphEdge {
   direction: "forward" | "backward" | "bidirectional";
   description?: string;
   weight: number; // 0-1
+  origin?: EdgeOrigin;
+  ruleId?: string; // manual: patch file name; rule: rule id
+  confidence?: number; // 0-1, certainty that the edge exists (not its weight)
+  evidence?: string; // human-readable proof, e.g. the patch note
 }
 
 // Layer (logical grouping)

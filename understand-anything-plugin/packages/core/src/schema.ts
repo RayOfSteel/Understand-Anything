@@ -143,6 +143,9 @@ export const DIRECTION_ALIASES: Record<string, string> = {
   inbound: "backward",
   both: "bidirectional",
   mutual: "bidirectional",
+  // Ad-hoc patch files historically used outgoing/incoming
+  outgoing: "forward",
+  incoming: "backward",
 };
 
 export function sanitizeGraph(data: Record<string, unknown>): Record<string, unknown> {
@@ -174,6 +177,10 @@ export function sanitizeGraph(data: Record<string, unknown>): Record<string, unk
       if (typeof edge !== "object" || edge === null) return edge;
       const e = { ...edge };
       if (e.description === null) delete e.description;
+      if (e.origin === null) delete e.origin;
+      if (e.ruleId === null) delete e.ruleId;
+      if (e.confidence === null) delete e.confidence;
+      if (e.evidence === null) delete e.evidence;
       if (typeof e.type === "string") e.type = e.type.toLowerCase();
       if (typeof e.direction === "string") e.direction = e.direction.toLowerCase();
       return e;
@@ -343,6 +350,42 @@ export function autoFixGraph(data: Record<string, unknown>): {
         });
       }
 
+      // Provenance (phase 2): validate origin enum, clamp confidence
+      if (e.origin !== undefined) {
+        const normalized = typeof e.origin === "string" ? e.origin.toLowerCase() : "";
+        if (["structural", "llm", "rule", "manual"].includes(normalized)) {
+          e.origin = normalized;
+        } else {
+          issues.push({
+            level: "auto-corrected",
+            category: "invalid-value",
+            message: `edges[${i}]: origin "${String(e.origin)}" is not a valid origin — removed`,
+            path: `edges[${i}].origin`,
+          });
+          delete e.origin;
+        }
+      }
+      if (e.confidence !== undefined) {
+        if (typeof e.confidence !== "number" || Number.isNaN(e.confidence)) {
+          issues.push({
+            level: "auto-corrected",
+            category: "type-coercion",
+            message: `edges[${i}]: confidence "${String(e.confidence)}" is not a number — removed`,
+            path: `edges[${i}].confidence`,
+          });
+          delete e.confidence;
+        } else if (e.confidence < 0 || e.confidence > 1) {
+          const original = e.confidence;
+          e.confidence = Math.max(0, Math.min(1, e.confidence));
+          issues.push({
+            level: "auto-corrected",
+            category: "out-of-range",
+            message: `edges[${i}]: confidence ${original} clamped to ${e.confidence}`,
+            path: `edges[${i}].confidence`,
+          });
+        }
+      }
+
       return e;
     });
   }
@@ -385,6 +428,8 @@ export const GraphNodeSchema = z.object({
   knowledgeMeta: KnowledgeMetaSchema.optional(),
 }).passthrough();
 
+export const EdgeOriginSchema = z.enum(["structural", "llm", "rule", "manual"]);
+
 export const GraphEdgeSchema = z.object({
   source: z.string(),
   target: z.string(),
@@ -392,6 +437,10 @@ export const GraphEdgeSchema = z.object({
   direction: z.enum(["forward", "backward", "bidirectional"]),
   description: z.string().optional(),
   weight: z.number().min(0).max(1),
+  origin: EdgeOriginSchema.optional(),
+  ruleId: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  evidence: z.string().optional(),
 });
 
 export const LayerSchema = z.object({
