@@ -230,7 +230,16 @@ Perform lightweight validation (no graph-reviewer agent):
 
 1. Write the final knowledge graph to `$PROJECT_ROOT/.understand-anything/knowledge-graph.json`.
 
-2. Run the provenance & patch post-pass in place on the just-written graph. If `$PLUGIN_ROOT` is not yet resolved (Step 0 point 9 only resolves it when `.understandignore` handling runs), resolve it now the same way: use `$CLAUDE_PLUGIN_ROOT` if set, otherwise `$HOME/.understand-anything-plugin`, and validate that `$candidate/skills/understand/apply-graph-patches.mjs` exists. If neither candidate resolves, do **not** abort at this late stage — the graph is already written and valid. Report "Warning: apply-graph-patches skipped: cannot locate plugin install at `$CLAUDE_PLUGIN_ROOT` or `$HOME/.understand-anything-plugin`" in the final summary (no silent skip) and continue with the meta.json step below.
+2. Run the deterministic linker on the freshly written graph (before the patch step, so manual patches keep the last word):
+
+   ```bash
+   node "$PLUGIN_ROOT/skills/understand/apply-link-rules.mjs" \
+     "$PROJECT_ROOT/.understand-anything/knowledge-graph.json"
+   ```
+
+   Surface every stderr `Warning:` line in the final report; on non-zero exit report it as a warning and continue (the graph file is only rewritten on success).
+
+3. Run the provenance & patch post-pass in place on the just-written graph. If `$PLUGIN_ROOT` is not yet resolved (Step 0 point 9 only resolves it when `.understandignore` handling runs), resolve it now the same way: use `$CLAUDE_PLUGIN_ROOT` if set, otherwise `$HOME/.understand-anything-plugin`, and validate that `$candidate/skills/understand/apply-graph-patches.mjs` exists. If neither candidate resolves, do **not** abort at this late stage — the graph is already written and valid. Report "Warning: apply-graph-patches skipped: cannot locate plugin install at `$CLAUDE_PLUGIN_ROOT` or `$HOME/.understand-anything-plugin`" in the final summary (no silent skip) and continue with the meta.json step below.
 
    ```bash
    node "$PLUGIN_ROOT/skills/understand/apply-graph-patches.mjs" \
@@ -241,7 +250,7 @@ Perform lightweight validation (no graph-reviewer agent):
 
    `scan-result.json` may be absent in this flow — the script then skips reclassification but still stamps defaults and applies patches. Surface every stderr `Warning:` line in the final report; on non-zero exit report it as a warning and continue (the graph file is only rewritten on success).
 
-3. Write updated metadata to `$PROJECT_ROOT/.understand-anything/meta.json`:
+4. Write updated metadata to `$PROJECT_ROOT/.understand-anything/meta.json`:
    ```json
    {
      "lastAnalyzedAt": "<ISO 8601 timestamp>",
@@ -251,7 +260,7 @@ Perform lightweight validation (no graph-reviewer agent):
    }
    ```
 
-4. **Update fingerprints (LOAD-PATCH-SAVE, not OVERWRITE).**
+5. **Update fingerprints (LOAD-PATCH-SAVE, not OVERWRITE).**
 
    The most common failure mode here: writing only the freshly-computed batch entries to `fingerprints.json`, discarding every other file's fingerprint. The next auto-update then sees all those files as new (no stored fingerprint), classifies them as STRUCTURAL, and escalates to FULL_UPDATE permanently (issue #152). The script must LOAD ALL existing entries, PATCH only the re-analyzed ones, and SAVE the full dict back.
 
@@ -300,12 +309,20 @@ Perform lightweight validation (no graph-reviewer agent):
 
    The `existedAndNonEmpty && before === 0` guard catches the silent-load-failure case before it corrupts the store. If the count shrinks from N to a small number that matches the batch size, the LOAD step was skipped — abort the write rather than persist the wrong dict.
 
-5. Clean up intermediate files:
+6. Clean up intermediate files, **preserving `scan-result.json`** for the next incremental run (see issue #293 — the provenance step above, and its counterpart in `/understand` Phase 7, both read this file; deleting it here would force the next incremental run to redo Phase 1 SCAN). We `mv` scratch entries into a timestamped `.trash-*` dir instead of `rm -rf`ing them directly — this avoids tripping destructive-action gates on hardened hosts (e.g. freshness-window checks) that flag deleting directories created moments earlier (see issue #301):
    ```bash
-   rm -rf $PROJECT_ROOT/.understand-anything/intermediate
+   # Preserve scan-result.json — Phase 1's deterministic file inventory,
+   # needed by the provenance step on the next incremental run.
+   TRASH="$PROJECT_ROOT/.understand-anything/.trash-$(date +%s)"
+   mkdir -p "$TRASH"
+   INTER="$PROJECT_ROOT/.understand-anything/intermediate"
+   if [ -d "$INTER" ]; then
+     # Move every entry except scan-result.json into the trash dir.
+     find "$INTER" -mindepth 1 -maxdepth 1 -not -name 'scan-result.json' -exec mv {} "$TRASH/" \; 2>/dev/null || true
+   fi
    ```
 
-6. Report a summary:
+7. Report a summary:
    - Files checked: N (total changed)
    - Structural changes found: N files
    - Cosmetic-only changes: N files (skipped)

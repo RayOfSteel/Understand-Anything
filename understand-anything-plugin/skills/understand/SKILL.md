@@ -175,7 +175,7 @@ Determine whether to run a full analysis or incremental update.
    | Existing graph + unchanged commit hash | Ask the user: "The graph is up to date at this commit. Would you like to: **(a)** run a full rebuild (`--full`), **(b)** run the LLM graph reviewer (`--review`), or **(c)** do nothing?" Then follow their choice. If they pick (c), STOP. |
    | Existing graph + changed files | Incremental update (re-analyze changed files only) |
 
-   **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`, then jump directly to Phase 6 step 4.
+   **Review-only path:** Copy the existing `knowledge-graph.json` to `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`, then jump directly to Phase 6 step 5.
 
    For incremental updates, get the changed file list:
    ```bash
@@ -588,7 +588,16 @@ Assemble the full KnowledgeGraph JSON object:
 
 2. Write the assembled graph to `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`.
 
-3. **Provenance & patches (deterministic).** Run the provenance post-pass on the assembled graph. It stamps `origin` on every edge, reclassifies importMap-backed `imports` edges as `structural`, and applies user patches from `.understand-anything/patches/`:
+3. **Deterministic linking (rule packs).** Run the rule-based linker on the assembled graph. It adds framework edges (origin `rule`) from the plugin's rule packs and from `.understand-anything/rules/`, and runs before the patch step so manual patches keep the last word (priority `manual > structural > rule > llm`):
+
+   ```bash
+   node <SKILL_DIR>/apply-link-rules.mjs \
+     "$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json"
+   ```
+
+   Append every stderr line starting with `Warning:` to `$PHASE_WARNINGS`. If the script exits non-zero, append `"link step failed — graph saved without rule edges"` to `$PHASE_WARNINGS` and continue: the script rewrites the graph file only on success.
+
+4. **Provenance & patches (deterministic).** Run the provenance post-pass on the assembled graph. It stamps `origin` on every edge, reclassifies importMap-backed `imports` edges as `structural`, and applies user patches from `.understand-anything/patches/`:
 
    ```bash
    node <SKILL_DIR>/apply-graph-patches.mjs \
@@ -599,7 +608,7 @@ Assemble the full KnowledgeGraph JSON object:
 
    Append every stderr line starting with `Warning:` to `$PHASE_WARNINGS`. If the script exits non-zero, append `"provenance step failed — graph saved without provenance"` to `$PHASE_WARNINGS` and continue: the script rewrites the graph file only on success, so the assembled graph is still intact.
 
-4. **Check `$ARGUMENTS` for `--review` flag.** Then run the appropriate validation path:
+5. **Check `$ARGUMENTS` for `--review` flag.** Then run the appropriate validation path:
 
 ---
 
