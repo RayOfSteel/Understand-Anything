@@ -281,7 +281,7 @@ node apply-link-rules.mjs <graph.json> [--rules <verzeichnis>]...
 
 ```
 
-Ohne `--rules` lädt das Script die zwei Default-Verzeichnisse aus §8.1: das `rules/`-Verzeichnis des Plugins (relativ zum Script-Standort aufgelöst) und `rules/` neben der Graph-Datei (d. h. `<repo>/.understand-anything/rules/`); explizite `--rules`-Angaben ersetzen beide Defaults. Fehlende Verzeichnisse sind No-ops.
+Ohne `--rules` lädt das Script die zwei Default-Verzeichnisse aus §8.1: das `rules/`-Verzeichnis des Plugins (relativ zum Script-Standort aufgelöst) und `<projektwurzel>/.understand-anything/rules/` — die Projektwurzel wird aus dem Graph-Pfad abgeleitet (alles vor dem Pfadsegment `.understand-anything`), womit sowohl `knowledge-graph.json` als auch `intermediate/assembled-graph.json` korrekt behandelt werden (der Phase-②-Patch-Default hat genau diese Schwäche als bekanntes Follow-up). Explizite `--rules`-Angaben ersetzen beide Defaults; fehlende Verzeichnisse sind No-ops. Dieselbe Projektwurzel ist die Basis für das Lesen der Quelldateien.
 
 **Position in der Pipeline:** Merge → **apply-link-rules (neu)** → apply-graph-patches → Validierung. Der Linker braucht den fertigen Graphen (Datei-Knoten als Kantenanker); die manuellen Patches laufen danach, damit die Prioritäts-Invariante `manual > structural > rule > llm` mechanisch gilt — ein Patch kann eine frische `rule`-Kante noch entfernen oder auf `manual` hochstufen. Einbettung an denselben zwei Hook-Punkten wie §7.3: SKILL.md Phase 6 (vor dem Patch-Schritt, `$PHASE_WARNINGS`-Anbindung, Renumbering inkl. Sprungziel-Prüfung) und Auto-Update-Hook 3d (vor dem Patch-Aufruf, self-contained `$PLUGIN_ROOT`-Resolution wird mitgenutzt).
 
@@ -310,6 +310,7 @@ Ohne `--rules` lädt das Script die zwei Default-Verzeichnisse aus §8.1: das `r
 | `csharp.classFqn` | `file`, `value` (FQN), `name` (Kurzname) | Klassen-/Interface-Deklarationen mit Namespace-Stitching. **Eigener Tree-Walk in core** nach dem Muster des Phase-①-Extractors (dieselben abgedeckten Fälle: block-scoped, file-scoped, verschachtelt) — dessen Walker sind privat und sein Output paart Klassen nicht mit Namespaces, direkte Wiederverwendung ist nicht möglich (Codex-Befund 2026-07-03) |
 | `csharp.methodDecl` | `file`, `classFqn`, `name` | Methodendeklarationen samt umgebender Klassen-FQN (gleicher Tree-Walk wie `csharp.classFqn`) |
 | `csharp.registration` | `file`, `serviceFqn`, `implFqn` | `Register`-Familie (`Register<TService, TImpl>`, `RegisterMany`, `RegisterInstance` mit 2 Typargumenten) via Tree-Sitter-Query auf `invocation_expression`; Typargumente per `using`-Kontext der registrierenden Datei zu FQN aufgelöst — **Re-Implementierung des Phase-①-Auflösungsansatzes in core** (die Originallogik lebt un-exportiert im Skill-CLI `extract-import-map.mjs` und ist aus core nicht importierbar; Codex-Befund 2026-07-03). Kandidatenindex ist der linker-eigene `csharp.classFqn`-Faktenbestand |
+| `xaml.typeUsage` | `file`, `value` (FQN) | xmlns-Mapping (`xmlns:p="clr-namespace:X.Y"`) + präfixierte Element-Tags (`p:Foo`) → `X.Y.Foo`; Präfix-Zerlegung und Konkatenation liegen bewusst im Provider, nicht in der Join-Sprache |
 | `razor.inject` | `file`, `typeName` (wie notiert), `typeFqn?` (falls auflösbar) | `@inject <Typ> <Name>`-Direktiven; Auflösung qualifiziert per FQN, sonst eindeutiger Kurzname gegen `csharp.classFqn` (mehrdeutig → kein Fakt, Warnung) |
 | `razor.componentTag` | `file`, `name` | PascalCase-Tags im Markup (`<FooComponent …>`) |
 | `razor.componentDecl` | `file`, `name` | `.razor`-Datei als Komponente (Name = Basename) |
@@ -336,7 +337,7 @@ Ohne `--rules` lädt das Script die zwei Default-Verzeichnisse aus §8.1: das `r
 | `dryioc.implements` | `registration.implFqn` == `classFqn.value` (Impl-Datei) und `registration.serviceFqn` == `classFqn.value` (Service-Datei); `Register<IFoo, Foo>()` beweist die Implementierung | Foo.cs —`implements`→ IFoo.cs | 1.0 |
 | `dryioc.registration` | Composition-Root-Datei → registrierte Impl-Datei | Registrar —`configures`→ Foo.cs | 1.0 |
 
-`wpf.xmlns-viewmodel` und `wpf.event-handler` sind vollständig als Query-Fakten + Join ausdrückbar; die `x:Class`-/`xmlns`-Captures sind reine Attribut-Queries auf der XML-Grammatik. Die C#- und Razor-Seiten laufen über die builtin-Provider.
+`wpf.code-behind` und `wpf.event-handler` sind auf der XAML-Seite vollständig als Query-Fakten + Join ausdrückbar (reine Attribut-Queries). `wpf.xmlns-viewmodel` ist es **nicht** — die Regel braucht Präfix-Zerlegung (`vm:Foo` → Präfix + Lokalname) und Namespace-Konkatenation (`X.Y` + `.Foo`), was die Gleichheits-Join-Sprache bewusst nicht kann; dafür liefert der builtin-Provider `xaml.typeUsage` (`file`, `value` = aufgelöste FQN) die fertig aufgelösten Typverwendungen aus xmlns-Mapping + präfixierten Element-Tags (Ergänzung im Katalog oben). Die C#- und Razor-Seiten laufen über die builtin-Provider.
 
 ### 8.4 Fehlerbehandlung und Observability
 
