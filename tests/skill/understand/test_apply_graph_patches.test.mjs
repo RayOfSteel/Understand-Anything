@@ -439,3 +439,65 @@ describe('apply-graph-patches.mjs — legacy patch format', () => {
     expect(r.stderr).toContain('patchFiles=1');
   });
 });
+
+describe('apply-graph-patches.mjs — validation hardening', () => {
+  const patchMeta = { title: 't', rationale: 'r', created: '2026-07-03' };
+
+  it('skips a patch add whose normalized type is not a valid edge type', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'a-exotic.patch.json': {
+          _meta: patchMeta,
+          edges_to_add: [
+            { source: 'file:a.cs', target: 'file:b.cs', type: 'sql_insert' },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('Warning: apply-graph-patches:');
+    expect(r.stderr).toContain('unknown edge type');
+    expect(r.stderr).toContain('skipped=1');
+    expect(r.graph.edges).toHaveLength(0);
+  });
+
+  it('treats origin:null like a missing origin in both passes', () => {
+    const r = runScript({
+      graph: makeGraph([
+        // importMap-backed → structural.
+        edge({ origin: null }),
+        // Not backed → defaults to llm.
+        edge({ source: 'file:b.cs', target: 'file:a.cs', origin: null }),
+      ]),
+      importMap: { 'a.cs': ['b.cs'] },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.graph.edges[0].origin).toBe('structural');
+    expect(r.graph.edges[0].confidence).toBe(1.0);
+    expect(r.graph.edges[1].origin).toBe('llm');
+  });
+
+  it('reports a title-bearing file without recognized edge sections at info level', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        // Typo'd section key: file is valid at format level but a no-op.
+        'a-typo.patch.json': {
+          _meta: patchMeta,
+          edge_to_add: [{ source: 'file:a.cs', target: 'file:b.cs', type: 'imports' }],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('no recognized edge sections');
+    // Info level, not a degradation warning; file still counts.
+    expect(r.stderr).not.toContain('Warning: apply-graph-patches: a-typo.patch.json');
+    expect(r.stderr).not.toContain('skipping patch');
+    expect(r.stderr).toContain('patchFiles=1');
+    expect(r.graph.edges).toHaveLength(0);
+  });
+});

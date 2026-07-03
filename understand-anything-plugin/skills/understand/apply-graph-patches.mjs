@@ -35,7 +35,11 @@ async function loadCoreAliases() {
   } catch {
     mod = await import(pathToFileURL(resolve(pluginRoot, 'packages/core/dist/schema.js')).href);
   }
-  return { EDGE_TYPE_ALIASES: mod.EDGE_TYPE_ALIASES, DIRECTION_ALIASES: mod.DIRECTION_ALIASES };
+  return {
+    EDGE_TYPE_ALIASES: mod.EDGE_TYPE_ALIASES,
+    DIRECTION_ALIASES: mod.DIRECTION_ALIASES,
+    EDGE_TYPES: new Set(mod.EdgeTypeSchema.options),
+  };
 }
 
 function warn(msg) {
@@ -73,7 +77,8 @@ function reclassifyStructural(graph, importMap) {
   for (const e of graph.edges) {
     if (e.type !== 'imports') continue;
     // Producer stamps (structural/rule/manual) win; llm upgrades to structural.
-    if (e.origin !== undefined && e.origin !== 'llm') continue;
+    // null counts as missing (== null covers undefined and null).
+    if (e.origin != null && e.origin !== 'llm') continue;
     if (!backed.has(`${e.source}|${e.target}`)) continue;
     e.origin = 'structural';
     e.confidence = 1.0;
@@ -87,7 +92,8 @@ function reclassifyStructural(graph, importMap) {
 function defaultLlmOrigin(graph) {
   let count = 0;
   for (const e of graph.edges) {
-    if (e.origin === undefined) {
+    // null counts as missing (== null covers undefined and null).
+    if (e.origin == null) {
       e.origin = 'llm';
       count++;
     }
@@ -167,6 +173,10 @@ function loadPatchFiles(patchesDir) {
     }
     // Missing edge sections are treated as empty (§7.2 extensibility: files may
     // carry only future top-level sections, e.g. legacy summary indexes).
+    // Valid no-op per §7.2.1 — informational only, never a Warning.
+    if (!Array.isArray(data.edges_to_add) && !Array.isArray(data.edges_to_remove)) {
+      info(`apply-graph-patches: ${name}: no recognized edge sections — nothing to apply`);
+    }
     if (Array.isArray(data.nodes_added) && data.nodes_added.length > 0) {
       warn(`${name}: nodes_added is not supported — ${data.nodes_added.length} node entries ignored`);
     }
@@ -178,7 +188,7 @@ function loadPatchFiles(patchesDir) {
 function applyPatches(graph, patchesDir, aliases) {
   const stats = { files: 0, added: 0, upgraded: 0, removed: 0, skipped: 0 };
   const patches = loadPatchFiles(patchesDir);
-  const { EDGE_TYPE_ALIASES, DIRECTION_ALIASES } = aliases;
+  const { EDGE_TYPE_ALIASES, DIRECTION_ALIASES, EDGE_TYPES } = aliases;
   const nodeIds = new Set((graph.nodes ?? []).map((n) => n.id));
 
   for (const { name, data } of patches) {
@@ -213,12 +223,19 @@ function applyPatches(graph, patchesDir, aliases) {
         stats.skipped++;
         continue;
       }
+      // Order matters: unknown-node check first (spec §7.6 measurement pins the
+      // unknown-node skip counts on the KernelResearch corpus), then edge type.
       if (!nodeIds.has(entry.source) || !nodeIds.has(entry.target)) {
         warn(`${name}: add ${entry.source} -> ${entry.target}: unknown node — skipped`);
         stats.skipped++;
         continue;
       }
       const type = normalizeEdgeType(entry.type, EDGE_TYPE_ALIASES);
+      if (!EDGE_TYPES.has(type)) {
+        warn(`${name}: add ${entry.source} -> ${entry.target}: unknown edge type "${type}" — skipped`);
+        stats.skipped++;
+        continue;
+      }
       const existing = graph.edges.find(
         (e) =>
           e.source === entry.source &&
@@ -292,8 +309,15 @@ async function main() {
 
   const resolvedPatchesDir =
     patchesDir ?? join(dirname(resolve(graphPath)), 'patches');
-  const aliases = await loadCoreAliases();
-  const stats = applyPatches(graph, resolvedPatchesDir, aliases);
+  // Degrade gracefully when core is not built/installed (fresh plugin cache):
+  // reclassify + llm default above still count, and the graph is still written.
+  let stats = { files: 0, added: 0, upgraded: 0, removed: 0, skipped: 0 };
+  try {
+    const aliases = await loadCoreAliases();
+    stats = applyPatches(graph, resolvedPatchesDir, aliases);
+  } catch (err) {
+    warn(`cannot load @understand-anything/core (${err.message}) — patch application skipped`);
+  }
 
   writeFileSync(graphPath, JSON.stringify(graph, null, 2) + '\n', 'utf-8');
   info(
