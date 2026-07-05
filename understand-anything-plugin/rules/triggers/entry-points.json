@@ -1,0 +1,26 @@
+[
+  {
+    "id": "trigger:common:main-files",
+    "kind": "trigger",
+    "match": { "type": "path-regex", "pattern": "(^|/)(main\\.go|main\\.rs|manage\\.py|Program\\.cs|Application\\.java|config\\.ru)$" },
+    "description": "Conventional application entry files (ported from file-analyzer.md heuristics). path-regex, NOT glob: the ignore package follows gitignore semantics and does not expand {a,b} braces.",
+    "confidence": 0.9,
+    "source": "pack:entry-points"
+  },
+  {
+    "id": "trigger:common:index-root",
+    "kind": "trigger",
+    "match": { "type": "path-regex", "pattern": "^(src/)?(index|app|server|cli)\\.(ts|tsx|js|jsx|mjs|cjs)$" },
+    "description": "Root-level JS/TS entry files (index/app/server/cli at repo or src root)",
+    "confidence": 0.8,
+    "source": "pack:entry-points"
+  },
+  {
+    "id": "trigger:common:ci-workflows",
+    "kind": "trigger",
+    "match": { "type": "glob", "pattern": ".github/workflows/**/*.{yml,yaml}" },
+    "description": "CI workflows are externally triggered (push/schedule/dispatch)",
+    "confidence": 0.9,
+    "source": "pack:entry-points"
+  }
+]
