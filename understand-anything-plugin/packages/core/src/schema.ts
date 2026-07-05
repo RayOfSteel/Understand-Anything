@@ -427,6 +427,8 @@ export const GraphNodeSchema = z.object({
   languageNotes: z.string().optional(),
   domainMeta: DomainMetaSchema.optional(),
   knowledgeMeta: KnowledgeMetaSchema.optional(),
+  reachability: z.enum(["reachable", "attached", "isolated", "unresolved"]).optional(),
+  triggeredBy: z.array(z.string()).optional(),
 }).passthrough();
 
 export const EdgeOriginSchema = z.enum(EDGE_ORIGINS);
