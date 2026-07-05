@@ -28,6 +28,10 @@
     "./linker": {
       "types": "./dist/linker/index.d.ts",
       "default": "./dist/linker/index.js"
+    },
+    "./reachability": {
+      "types": "./dist/reachability/index.d.ts",
+      "default": "./dist/reachability/index.js"
     }
   },
   "scripts": {
