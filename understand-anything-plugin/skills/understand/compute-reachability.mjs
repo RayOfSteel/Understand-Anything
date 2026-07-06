@@ -207,7 +207,10 @@ async function main() {
   for (const id of triggerAdds) if (!removeSet.has(id)) triggerIds.add(id);
 
   if (triggerAdds.length > 0) {
-    const merged = [...new Set([...(triggersFile.add ?? []), ...triggerAdds])].sort();
+    const merged = [...new Set([
+      ...(triggersFile.add ?? []),
+      ...triggerAdds.filter((id) => !removeSet.has(id)),
+    ])].sort();
     writeFileSync(triggersPath, JSON.stringify({ ...triggersFile, add: merged }, null, 2) + '\n', 'utf-8');
   }
 

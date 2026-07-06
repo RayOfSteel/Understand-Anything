@@ -238,7 +238,13 @@ describe('compute-reachability.mjs', () => {
       }],
     }), 'utf-8');
     run(p.graphPath, ['--verdicts', vd]);
-    const isl = islands(p.ua);
+    let isl = islands(p.ua);
+    expect(isl.components).toHaveLength(0);
+    expect(isl.resolvedComponents.some((c) => c.id === compId)).toBe(true);
+    // third run WITHOUT --verdicts: the trigger must have survived via the
+    // triggers.json write-back, not merely as in-memory seeding for the run above.
+    run(p.graphPath);
+    isl = islands(p.ua);
     expect(isl.components).toHaveLength(0);
     expect(isl.resolvedComponents.some((c) => c.id === compId)).toBe(true);
   }, 15000);

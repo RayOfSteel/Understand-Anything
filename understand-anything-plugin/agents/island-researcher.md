@@ -69,8 +69,22 @@ for dynamic/reflective references, `triggers` for schedulers/CI.
 **(b) Found a trigger or mechanism** → write
 `$PROJECT_ROOT/.understand-anything/rules/triggers/mission-$MISSION_ID.json`
 (array of trigger rules, `"source": "mission:$MISSION_ID"`; match types
-`glob`, `path-regex`, `symbol`). For a one-off trigger without a mechanism,
-use verdict `trigger` below — the orchestrator folds it into triggers.json.
+`glob`, `path-regex`, `symbol`). Every rule MUST include all of `id`,
+`kind: "trigger"`, `match`, and `confidence` — the schema is `.strict()`
+and silently drops rules missing any of these:
+
+    [{
+      "id": "trigger:mission:<slug>",
+      "kind": "trigger",
+      "match": { "type": "glob", "pattern": "scripts/**/*.scr" },
+      "description": "<what the mechanism is>",
+      "evidence": "<file:line where you saw the mechanism>",
+      "confidence": 0.9,
+      "source": "mission:$MISSION_ID"
+    }]
+
+For a one-off trigger without a mechanism, use verdict `trigger` below —
+the orchestrator folds it into triggers.json.
 
 **(c) Genuinely isolated** → verdict with confidence:
 - `high` — clear evidence (e.g. replaced by X, nothing references it, git-dead)
