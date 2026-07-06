@@ -223,6 +223,25 @@ describe('compute-reachability.mjs', () => {
     expect(g.nodes.some((n) => n.reachability === 'isolated')).toBe(false);
   }, 15000);
 
+  it('accepts the exact output format documented in agents/trigger-census.md', () => {
+    const base = BASE();
+    const { graphPath } = makeProject({
+      ...base,
+      triggersFile: { add: ['file:src/a.ts'], remove: [], notes: 'census smoke' },
+      localTriggerRules: [
+        ...base.localTriggerRules,
+        {
+          id: 'trigger:census:scr', kind: 'trigger',
+          match: { type: 'glob', pattern: 'src/b.ts' },
+          description: 'x', evidence: 'y', confidence: 0.9, source: 'census',
+        },
+      ],
+    });
+    const { status, stdout } = run(graphPath);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/islands=0/); // a via add, b via learned rule
+  });
+
   it('mission plan groups by top path segment and respects caps', () => {
     const nodes = [fileNode('src/main.ts')];
     const edges = [];
