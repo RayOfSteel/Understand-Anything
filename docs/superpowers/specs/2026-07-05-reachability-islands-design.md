@@ -1,7 +1,7 @@
 # Design: Trigger-Erreichbarkeit und Island Research Missions
 
 **Datum:** 2026-07-05
-**Status:** Entwurf, zur Review
+**Status:** Implementiert (2026-07-05) — bis auf Match-Typ `query` (kommt mit der Pack-Befüllung, §9)
 **Verhältnis zu anderen Specs:** baut auf der Regel-Infrastruktur aus `2026-07-02-deterministic-linking-design.md` §8 auf (deklarative JSON-Regeln, Packs im Plugin + repo-lokale Regeln) und realisiert/erweitert deren offene Phase ④ (Gap-Diagnose).
 
 ## 1. Kontext und Motivation

@@ -14,7 +14,7 @@ An open-source tool combining LLM intelligence + static analysis to produce inte
   - **packages/dashboard** — React + TypeScript web dashboard (React Flow, Zustand, TailwindCSS v4)
   - **src/** — Skill TypeScript source for `/understand-chat`, `/understand-diff`, `/understand-explain`, `/understand-onboard`
   - **skills/** — Skill definitions (`/understand`, `/understand-dashboard`, etc.)
-  - **agents/** — Agent definitions (project-scanner, file-analyzer, architecture-analyzer, tour-builder, graph-reviewer)
+  - **agents/** — Agent definitions (project-scanner, file-analyzer, architecture-analyzer, tour-builder, graph-reviewer, trigger-census, island-researcher)
 
 ## Dashboard
 - Dark luxury theme: deep blacks (#0a0a0a), gold/amber accents (#d4a574), DM Serif Display typography
@@ -96,3 +96,17 @@ cp -R ./understand-anything-plugin/* ~/.claude/plugins/cache/understand-anything
 ```
 
 **To revert to upstream:** Uninstall and reinstall the plugin from the marketplace — it repopulates the cache from the upstream repo.
+
+## Reachability & Islands (`/understand` Phase 6.5, `/understand-islands`)
+Every node chain must be reachable from a trigger/entry point (spec
+`docs/superpowers/specs/2026-07-05-reachability-islands-design.md`).
+Deterministic pass: `skills/understand/compute-reachability.mjs` (trigger
+rules from `rules/triggers/` + `.understand-anything/rules/triggers/`, BFS
+with typed edge semantics, island clustering into
+`.understand-anything/islands.json`). LLM steps: `trigger-census` agent
+(once per repo, writes `triggers.json`), `island-researcher` missions
+(first 10 free, then interactive checkpoint; verdicts `connected` /
+`trigger` / `isolated` with confidence). Mission edges arrive as
+`.understand-anything/patches/mission-*.patch.json` with `_meta.origin:
+"llm"`. All state survives runs — `/understand-islands` resumes on an
+existing graph.
