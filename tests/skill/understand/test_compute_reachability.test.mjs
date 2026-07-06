@@ -225,8 +225,18 @@ describe('compute-reachability.mjs', () => {
 
   it('accepts the exact output format documented in agents/trigger-census.md', () => {
     const base = BASE();
+    // Fixture built explicitly (not spread from BASE()'s edges): src/a.ts and
+    // src/b.ts are two SEPARATE singleton islands with no edge between them
+    // and no edge to the reachable set. That makes the two rescue mechanisms
+    // topologically independent — islands=0 is reachable only if BOTH the
+    // `add` (rescues a.ts) AND the learned rule (rescues b.ts) actually fire.
+    // If either mechanism silently breaks, one singleton island remains and
+    // islands >= 1. (With BASE()'s mutual a<->b edges, rescuing either one
+    // alone was enough to reach the other, so that fixture couldn't tell the
+    // two mechanisms apart.)
     const { graphPath } = makeProject({
-      ...base,
+      nodes: [fileNode('src/main.ts'), fileNode('src/used.ts'), fileNode('src/a.ts'), fileNode('src/b.ts')],
+      edges: [edge('src/main.ts', 'src/used.ts', 'imports')],
       triggersFile: { add: ['file:src/a.ts'], remove: [], notes: 'census smoke' },
       localTriggerRules: [
         ...base.localTriggerRules,
@@ -237,9 +247,11 @@ describe('compute-reachability.mjs', () => {
         },
       ],
     });
-    const { status, stdout } = run(graphPath);
+    const { status, stdout, graph } = run(graphPath);
     expect(status).toBe(0);
-    expect(stdout).toMatch(/islands=0/); // a via add, b via learned rule
+    expect(stdout).toMatch(/islands=0/); // both a (via add) and b (via learned rule) must be rescued
+    expect(graph.nodes.find((n) => n.id === 'file:src/a.ts').reachability).toBe('reachable'); // rescued by add
+    expect(graph.nodes.find((n) => n.id === 'file:src/b.ts').reachability).toBe('reachable'); // rescued by learned rule
   });
 
   it('mission plan groups by top path segment and respects caps', () => {
