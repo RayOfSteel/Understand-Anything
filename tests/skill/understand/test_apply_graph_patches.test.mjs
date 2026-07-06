@@ -224,6 +224,44 @@ describe('apply-graph-patches.mjs — patch application', () => {
     expect(r.graph.edges[0].origin).toBe('manual');
   });
 
+  it('applies _meta.origin "llm" to added edges via mission patches', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'mission-m-1.patch.json': {
+          _meta: { title: 'mission edges', origin: 'llm' },
+          edges_to_add: [
+            { source: 'file:a.cs', target: 'file:b.cs', type: 'imports', direction: 'forward', weight: 0.7 },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    const added = r.graph.edges.find((e) => e.source === 'file:a.cs' && e.target === 'file:b.cs');
+    expect(added.origin).toBe('llm');
+    expect(added.ruleId).toBe('mission-m-1.patch.json');
+  });
+
+  it('falls back to manual with a warning on an invalid _meta.origin', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'mission-m-2.patch.json': {
+          _meta: { title: 'mission edges', origin: 'structural' },
+          edges_to_add: [
+            { source: 'file:a.cs', target: 'file:b.cs', type: 'imports' },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('invalid _meta.origin');
+    const added = r.graph.edges.find((e) => e.source === 'file:a.cs' && e.target === 'file:b.cs');
+    expect(added.origin).toBe('manual');
+  });
+
   it('removes matching edges across all directions and type aliases', () => {
     const r = runScript({
       graph: makeGraph([

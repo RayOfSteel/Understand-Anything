@@ -9,7 +9,10 @@
  *   2. every edge without an origin → origin "llm".
  *   3. single-case patches from .understand-anything/patches/*.patch.json
  *      are applied (per file: removes first, then adds; added/upgraded
- *      edges carry origin "manual", ruleId = patch file name).
+ *      edges carry origin "manual", ruleId = patch file name). A patch may
+ *      set _meta.origin: "llm" to mark its added edges as LLM-generated
+ *      (island missions) rather than human-authored "manual" claims; any
+ *      other value falls back to "manual" with a warning.
  *
  * Usage:
  *   node apply-graph-patches.mjs <graph.json> [--scan-result <path>] [--patches <dir>]
@@ -104,6 +107,7 @@ function defaultLlmOrigin(graph) {
 // ── Step 3: single-case patches ────────────────────────────────────────────
 
 const VALID_DIRECTIONS = new Set(['forward', 'backward', 'bidirectional']);
+const ALLOWED_PATCH_ORIGINS = new Set(['manual', 'llm']);
 
 function normalizeEdgeType(type, EDGE_TYPE_ALIASES) {
   const t = String(type ?? '').toLowerCase();
@@ -194,6 +198,18 @@ function applyPatches(graph, patchesDir, aliases) {
   for (const { name, data } of patches) {
     stats.files++;
 
+    // _meta.origin lets a patch mark its added edges as LLM-generated
+    // (island missions) instead of the default "manual" human claim.
+    let patchOrigin = 'manual';
+    const requestedOrigin = data._meta?.origin;
+    if (requestedOrigin !== undefined) {
+      if (ALLOWED_PATCH_ORIGINS.has(requestedOrigin)) {
+        patchOrigin = requestedOrigin;
+      } else {
+        warn(`${name}: invalid _meta.origin "${requestedOrigin}" — falling back to "manual"`);
+      }
+    }
+
     for (const entry of data.edges_to_remove ?? []) {
       if (!entry || !entry.source || !entry.target || !entry.type) {
         warn(`${name}: edges_to_remove entry missing source/target/type — skipped`);
@@ -256,7 +272,7 @@ function applyPatches(graph, patchesDir, aliases) {
         type,
         direction: normalizeDirection(entry.direction, DIRECTION_ALIASES),
         weight: typeof entry.weight === 'number' ? Math.max(0, Math.min(1, entry.weight)) : 1.0,
-        origin: 'manual',
+        origin: patchOrigin,
         ruleId: name,
         confidence: 1.0,
       };
