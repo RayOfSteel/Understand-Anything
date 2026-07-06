@@ -18,8 +18,8 @@
   {
     "id": "trigger:common:ci-workflows",
     "kind": "trigger",
-    "match": { "type": "glob", "pattern": ".github/workflows/**/*.{yml,yaml}" },
-    "description": "CI workflows are externally triggered (push/schedule/dispatch)",
+    "match": { "type": "path-regex", "pattern": "^\\.github/workflows/.*\\.(yml|yaml)$" },
+    "description": "CI workflows are externally triggered (push/schedule/dispatch). path-regex, NOT glob: the ignore package does not expand {yml,yaml} braces.",
     "confidence": 0.9,
     "source": "pack:entry-points"
   }

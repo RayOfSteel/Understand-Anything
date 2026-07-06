@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { applyTriggerRules } from "../apply-trigger-rules.js";
+import { loadTriggerRuleDirs } from "../load-trigger-rules.js";
 import type { TriggerRule } from "../trigger-rule-schema.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const STARTER_PACK_DIR = resolve(__dirname, "../../../../../rules/triggers");
 
 const rule = (over: Partial<TriggerRule>): TriggerRule => ({
   id: "r", kind: "trigger", match: { type: "glob", pattern: "**/*" },
@@ -53,5 +60,31 @@ describe("applyTriggerRules", () => {
     const nodes = [node("file:scripts\\run.scr", { filePath: "scripts\\run.scr" })];
     applyTriggerRules(nodes, [rule({ id: "t", match: { type: "glob", pattern: "scripts/**" } })]);
     expect(nodes[0].tags).toContain("entry-point");
+  });
+
+  describe("shipped starter pack (rules/triggers/entry-points.json)", () => {
+    it("pack directory exists at the expected resolved path", () => {
+      expect(existsSync(STARTER_PACK_DIR)).toBe(true);
+    });
+
+    it("every starter rule fires on a representative matching path", () => {
+      const { rules, warnings } = loadTriggerRuleDirs([STARTER_PACK_DIR]);
+      expect(warnings).toEqual([]);
+      expect(rules.length).toBeGreaterThan(0);
+
+      const nodes = [
+        node("file:main.go", { filePath: "main.go" }),
+        node("file:src/index.ts", { filePath: "src/index.ts" }),
+        node("file:.github/workflows/ci.yml", { filePath: ".github/workflows/ci.yml" }),
+        node("file:.github/workflows/deploy.yaml", { filePath: ".github/workflows/deploy.yaml" }),
+      ];
+
+      applyTriggerRules(nodes, rules);
+
+      expect(nodes[0].tags).toContain("entry-point"); // trigger:common:main-files
+      expect(nodes[1].tags).toContain("entry-point"); // trigger:common:index-root
+      expect(nodes[2].tags).toContain("entry-point"); // trigger:common:ci-workflows (.yml)
+      expect(nodes[3].tags).toContain("entry-point"); // trigger:common:ci-workflows (.yaml)
+    });
   });
 });
