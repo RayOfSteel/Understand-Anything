@@ -22,7 +22,7 @@
  */
 
 import { dirname, join, resolve, sep } from 'node:path';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
@@ -74,6 +74,20 @@ function readJson(path, fallback) {
   try {
     return JSON.parse(readFileSync(path, 'utf-8'));
   } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Reads persistent state that may be absent (fine, first run — stays silent)
+ * or present-but-unparseable (not fine — warns and starts fresh).
+ */
+function readJsonOrWarn(path, label, fallback) {
+  if (!existsSync(path)) return fallback;
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8'));
+  } catch (e) {
+    warn(`${label}: invalid JSON (${e.message}) — starting fresh`);
     return fallback;
   }
 }
@@ -150,6 +164,10 @@ async function main() {
     warn(`graph path has no .understand-anything segment — using ${projectRoot} as project root`);
   }
   const uaDir = join(projectRoot, '.understand-anything');
+  // Ensure the destination exists before ANY write (graph or islands.json) so a
+  // fallback project root (no pre-existing .understand-anything dir) can never
+  // leave the graph rewritten but islands.json write failing with ENOENT.
+  mkdirSync(uaDir, { recursive: true });
 
   let ruleDirs = args.ruleDirs;
   if (ruleDirs.length === 0) {
@@ -171,9 +189,7 @@ async function main() {
   core.applyTriggerRules(graph.nodes, rules);
 
   const triggersPath = args.triggersPath ?? join(uaDir, 'triggers.json');
-  const triggersFile = existsSync(triggersPath)
-    ? readJson(triggersPath, { add: [], remove: [] })
-    : { add: [], remove: [] };
+  const triggersFile = readJsonOrWarn(triggersPath, 'triggers.json', { add: [], remove: [] });
   const removeSet = new Set(triggersFile.remove ?? []);
   for (const node of graph.nodes) {
     if (removeSet.has(node.id)) {
@@ -191,7 +207,9 @@ async function main() {
 
   // 3. Merge with previous islands.json + verdicts.
   const islandsPath = join(uaDir, 'islands.json');
-  const previous = readJson(islandsPath, { components: [], resolvedComponents: [], missionCounter: 0 });
+  const previous = readJsonOrWarn(
+    islandsPath, 'islands.json', { components: [], resolvedComponents: [], missionCounter: 0 },
+  );
   const prevById = new Map((previous.components ?? []).map((c) => [c.id, c]));
   const { verdicts, maxMission } = readVerdicts(args.verdictsDir);
   const now = new Date().toISOString();

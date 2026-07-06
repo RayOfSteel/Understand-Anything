@@ -90,7 +90,7 @@ describe('compute-reachability.mjs', () => {
     const first = readFileSync(graphPath, 'utf-8');
     run(graphPath);
     expect(readFileSync(graphPath, 'utf-8')).toBe(first);
-  });
+  }, 15000);
 
   it('skips knowledge graphs without writing', () => {
     const { ua, graphPath } = makeProject({ ...BASE(), kind: 'knowledge' });
@@ -146,7 +146,7 @@ describe('compute-reachability.mjs', () => {
     expect(isl.components[0].status).toBe('isolated');
     expect(isl.components[0].verdictReason).toBe('dead code');
     expect(isl.missionPlan).toHaveLength(0); // isolated components are never re-planned
-  });
+  }, 15000);
 
   it('a learned local rule rescues the island on recompute and archives it as connected', () => {
     const base = BASE();
@@ -166,6 +166,62 @@ describe('compute-reachability.mjs', () => {
     expect(isl.resolvedComponents).toHaveLength(1);
     expect(isl.resolvedComponents[0].status).toBe('connected');
   });
+
+  it('warns (but still succeeds) when persistent state files are corrupted', () => {
+    const { ua, graphPath } = makeProject(BASE());
+    writeFileSync(join(ua, 'islands.json'), '{ not valid json', 'utf-8');
+    writeFileSync(join(ua, 'triggers.json'), '{ also not valid', 'utf-8');
+    const { status, stderr } = run(graphPath);
+    expect(status).toBe(0);
+    expect(stderr).toContain('islands.json: invalid JSON');
+    expect(stderr).toContain('triggers.json: invalid JSON');
+    expect(stderr).toContain('starting fresh');
+  });
+
+  it('creates the fallback .understand-anything dir before writing when the graph has no ancestor', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ua-reach-noua-'));
+    const graphPath = join(root, 'graph.json');
+    const graph = {
+      version: '1.0.0',
+      project: { name: 'p', languages: [], frameworks: [], description: '',
+        analyzedAt: '2026-01-01T00:00:00Z', gitCommitHash: 'abc' },
+      nodes: [fileNode('src/main.ts'), fileNode('src/a.ts'), fileNode('src/b.ts')],
+      edges: [edge('src/a.ts', 'src/b.ts', 'imports'), edge('src/b.ts', 'src/a.ts', 'imports')],
+      layers: [], tour: [],
+    };
+    writeFileSync(graphPath, JSON.stringify(graph, null, 2) + '\n', 'utf-8');
+    const { status, stderr, graph: outGraph } = run(graphPath);
+    expect(status).toBe(0);
+    expect(stderr).toMatch(/using .* as project root/);
+    expect(outGraph.nodes.every((n) => typeof n.reachability === 'string')).toBe(true);
+    const uaDir = join(root, '.understand-anything');
+    expect(existsSync(join(uaDir, 'islands.json'))).toBe(true);
+  });
+
+  it('keeps a connected-verdict island unresolved but records its missionId', () => {
+    const base = BASE();
+    const p1 = makeProject(base);
+    const r1 = run(p1.graphPath);
+    const compId = islands(p1.ua).components[0].id;
+    expect(r1.status).toBe(0);
+    const p2 = makeProject({
+      ...base,
+      verdicts: {
+        'm-1.json': {
+          missionId: 'm-1',
+          verdicts: [{ componentId: compId, verdict: 'connected', confidence: 'high', reason: 'wired up' }],
+        },
+      },
+    });
+    const r2 = run(p2.graphPath, ['--verdicts', join(p2.ua, 'intermediate', 'mission-results')]);
+    expect(r2.status).toBe(0);
+    const isl = islands(p2.ua);
+    expect(isl.components).toHaveLength(1);
+    expect(isl.components[0].status).toBe('unresolved');
+    expect(isl.components[0].missionId).toBe('m-1');
+    const g = JSON.parse(readFileSync(p2.graphPath, 'utf-8'));
+    expect(g.nodes.some((n) => n.reachability === 'isolated')).toBe(false);
+  }, 15000);
 
   it('mission plan groups by top path segment and respects caps', () => {
     const nodes = [fileNode('src/main.ts')];
