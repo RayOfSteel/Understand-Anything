@@ -94,8 +94,9 @@ function readJsonOrWarn(path, label, fallback) {
 
 function readVerdicts(dir) {
   const verdicts = new Map(); // componentId -> {verdict, confidence, reason, missionId}
+  const triggerAdds = [];
   let maxMission = 0;
-  if (!dir || !existsSync(dir)) return { verdicts, maxMission };
+  if (!dir || !existsSync(dir)) return { verdicts, triggerAdds, maxMission };
   for (const f of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
     const data = readJson(join(dir, f), null);
     if (!data || !Array.isArray(data.verdicts)) {
@@ -107,9 +108,10 @@ function readVerdicts(dir) {
     for (const v of data.verdicts) {
       if (!v.componentId || !v.verdict) continue;
       verdicts.set(v.componentId, { ...v, missionId: data.missionId });
+      if (v.verdict === 'trigger') triggerAdds.push(...(v.triggerNodeIds ?? []));
     }
   }
-  return { verdicts, maxMission };
+  return { verdicts, triggerAdds, maxMission };
 }
 
 function planMissions(components, startId, maxClusters, maxFiles) {
@@ -197,10 +199,17 @@ async function main() {
       delete node.triggeredBy;
     }
   }
+  const { verdicts, triggerAdds, maxMission } = readVerdicts(args.verdictsDir);
   const triggerIds = new Set(
     graph.nodes.filter((n) => (n.tags ?? []).includes('entry-point')).map((n) => n.id),
   );
   for (const id of triggersFile.add ?? []) if (!removeSet.has(id)) triggerIds.add(id);
+  for (const id of triggerAdds) if (!removeSet.has(id)) triggerIds.add(id);
+
+  if (triggerAdds.length > 0) {
+    const merged = [...new Set([...(triggersFile.add ?? []), ...triggerAdds])].sort();
+    writeFileSync(triggersPath, JSON.stringify({ ...triggersFile, add: merged }, null, 2) + '\n', 'utf-8');
+  }
 
   // 2. Engine.
   const result = core.computeReachability(graph, triggerIds);
@@ -211,7 +220,6 @@ async function main() {
     islandsPath, 'islands.json', { components: [], resolvedComponents: [], missionCounter: 0 },
   );
   const prevById = new Map((previous.components ?? []).map((c) => [c.id, c]));
-  const { verdicts, maxMission } = readVerdicts(args.verdictsDir);
   const now = new Date().toISOString();
 
   const components = result.components.map((c) => {

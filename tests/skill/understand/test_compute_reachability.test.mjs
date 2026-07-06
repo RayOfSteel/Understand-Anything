@@ -223,6 +223,26 @@ describe('compute-reachability.mjs', () => {
     expect(g.nodes.some((n) => n.reachability === 'isolated')).toBe(false);
   }, 15000);
 
+  it('folds trigger verdicts: triggerNodeIds become entry points on recompute', () => {
+    const base = BASE();
+    const p = makeProject(base);
+    run(p.graphPath);
+    const compId = islands(p.ua).components[0].id;
+    const vd = join(p.ua, 'intermediate', 'mission-results');
+    mkdirSync(vd, { recursive: true });
+    writeFileSync(join(vd, 'm-1.json'), JSON.stringify({
+      missionId: 'm-1',
+      verdicts: [{
+        componentId: compId, verdict: 'trigger', confidence: 'high',
+        reason: 'standalone tool', triggerNodeIds: ['file:src/a.ts'],
+      }],
+    }), 'utf-8');
+    run(p.graphPath, ['--verdicts', vd]);
+    const isl = islands(p.ua);
+    expect(isl.components).toHaveLength(0);
+    expect(isl.resolvedComponents.some((c) => c.id === compId)).toBe(true);
+  }, 15000);
+
   it('accepts the exact output format documented in agents/trigger-census.md', () => {
     const base = BASE();
     // Fixture built explicitly (not spread from BASE()'s edges): src/a.ts and
