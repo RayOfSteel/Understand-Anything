@@ -43,6 +43,16 @@ export function loadTriggerRuleDirs(dirs: string[]): LoadTriggerRulesResult {
           );
           continue;
         }
+        if (parsed.data.match.type === "path-regex" || parsed.data.match.type === "symbol") {
+          try {
+            new RegExp(parsed.data.match.pattern);
+          } catch (e) {
+            warnings.push(
+              `trigger rule ${parsed.data.id} in ${file}: uncompilable regex (${(e as Error).message}) — skipped`,
+            );
+            continue;
+          }
+        }
         if (byId.has(parsed.data.id)) {
           warnings.push(`trigger rule ${parsed.data.id}: overridden by later definition in ${file}`);
         }

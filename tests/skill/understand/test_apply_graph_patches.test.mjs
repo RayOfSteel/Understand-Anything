@@ -386,6 +386,38 @@ describe('apply-graph-patches.mjs — patch application', () => {
     expect(secondRun).toBe(firstRun);
   });
 
+  it('does not promote an llm-origin edge to manual when a mission patch is re-applied (priority invariant)', () => {
+    const r = runScript({
+      graph: makeGraph([]),
+      patches: {
+        'mission-m-3.patch.json': {
+          _meta: { title: 'mission edges', origin: 'llm' },
+          edges_to_add: [
+            { source: 'file:a.cs', target: 'file:b.cs', type: 'imports', direction: 'forward', weight: 0.7 },
+          ],
+        },
+      },
+    });
+    roots.push(r.root);
+    expect(r.status).toBe(0);
+    const added = r.graph.edges.find((e) => e.source === 'file:a.cs' && e.target === 'file:b.cs');
+    expect(added.origin).toBe('llm');
+    expect(added.confidence).toBe(1.0);
+
+    // Re-apply the same (persisted) mission patch on a second round, as
+    // Phase 6.5 step 4d does every mission round.
+    const firstRun = readFileSync(r.graphPath, 'utf-8');
+    const patchDir = join(r.root, 'patches');
+    const second = spawnSync('node', [SCRIPT, r.graphPath, '--patches', patchDir], { encoding: 'utf-8' });
+    expect(second.status).toBe(0);
+    const secondRun = readFileSync(r.graphPath, 'utf-8');
+    const secondGraph = JSON.parse(secondRun);
+    const reApplied = secondGraph.edges.find((e) => e.source === 'file:a.cs' && e.target === 'file:b.cs');
+    expect(reApplied.origin).toBe('llm');
+    expect(reApplied.confidence).toBe(1.0);
+    expect(secondRun).toBe(firstRun);
+  });
+
   it('accepts all 15 real KernelResearch patch files at format level', () => {
     const fixtureDir = resolve(__dirname, 'fixtures/kernelresearch-patches');
     const r = runScript({ graph: makeGraph([]) , patches: {} });

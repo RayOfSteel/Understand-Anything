@@ -93,4 +93,22 @@ describe("loadTriggerRuleDirs", () => {
     expect(rules).toEqual([]);
     expect(warnings).toEqual([]);
   });
+
+  it("skips a rule with an uncompilable path-regex pattern, keeping the valid rule, never throws", () => {
+    const d = dirWith({
+      "rules.json": [
+        { ...VALID, id: "trigger:test:good" },
+        { ...VALID, id: "trigger:test:bad-regex", match: { type: "path-regex", pattern: "(" } },
+      ],
+    });
+    let result: ReturnType<typeof loadTriggerRuleDirs> | undefined;
+    expect(() => {
+      result = loadTriggerRuleDirs([d]);
+    }).not.toThrow();
+    const { rules, warnings } = result!;
+    expect(rules.map((r) => r.id)).toEqual(["trigger:test:good"]);
+    expect(
+      warnings.some((w) => w.includes("trigger:test:bad-regex") && w.includes("uncompilable regex")),
+    ).toBe(true);
+  });
 });

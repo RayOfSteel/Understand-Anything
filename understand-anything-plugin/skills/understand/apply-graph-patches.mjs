@@ -259,11 +259,18 @@ function applyPatches(graph, patchesDir, aliases) {
           normalizeEdgeType(e.type, EDGE_TYPE_ALIASES) === type,
       );
       if (existing) {
-        existing.origin = 'manual';
-        existing.ruleId = name;
-        existing.confidence = 1.0;
-        if (typeof entry.note === 'string' && entry.note) existing.evidence = entry.note;
-        stats.upgraded++;
+        // Priority invariant (manual > structural > rule > llm): an llm-
+        // origin patch (mission edges) must never override an edge that
+        // already exists — leave it byte-for-byte untouched so re-applying
+        // the same mission patch on a later round is a no-op. Only a
+        // manual patch may legitimately promote/re-stamp an existing edge.
+        if (patchOrigin === 'manual') {
+          existing.origin = 'manual';
+          existing.ruleId = name;
+          existing.confidence = 1.0;
+          if (typeof entry.note === 'string' && entry.note) existing.evidence = entry.note;
+          stats.upgraded++;
+        }
         continue;
       }
       const newEdge = {
