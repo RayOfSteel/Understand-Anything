@@ -732,7 +732,7 @@ Pass these parameters in the dispatch prompt:
    - Re-run the final graph validation after automated fixes
    - If critical issues remain after one fix attempt, save the graph anyway but include the warnings in the final report and mark dashboard auto-launch as skipped
 
-7. **If `issues` array is empty:** Proceed to Phase 7.
+7. **If `issues` array is empty:** Proceed to Phase 6.5.
 
 ---
 
@@ -757,14 +757,14 @@ explicitly tracked and investigated. This phase is deterministic first
    reachability data"` and continue to Phase 7 (the script only rewrites on
    success). If stdout reports `skipped (knowledge graph)`, continue to
    Phase 7. Read `$PROJECT_ROOT/.understand-anything/islands.json` and note
-   `triggerCount` and the island list. If `--skip-islands`: report
-   `Phase 6.5 complete (deterministic only). <N> islands tracked in islands.json.`
-   and continue to Phase 7.
+   `triggerCount` and the island list.
 
 2. **Report the tracked state (step 1 of the team effort: track; step 2:
    the list).** Print a compact island list to the user: component id,
    size, dominantCategory, first 3 files. Sorted by size, max 20 rows,
-   `... and N more` if longer.
+   `... and N more` if longer. If `--skip-islands` is in `$ARGUMENTS`: report
+   `Phase 6.5 complete (deterministic only). <N> islands tracked in islands.json.`
+   and continue to Phase 7.
 
 3. **Trigger census (1 subagent).** Skip when
    `$PROJECT_ROOT/.understand-anything/triggers.json` already exists (an
