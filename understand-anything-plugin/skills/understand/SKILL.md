@@ -17,6 +17,7 @@ Analyze the current codebase and produce a `knowledge-graph.json` file in `.unde
   - `--review` — Run full LLM graph-reviewer instead of inline deterministic validation
   - `--language <lang>` — Generate all textual content (summaries, descriptions, tags, titles, languageNotes, languageLesson) in the specified language. Accepts ISO 639-1 codes (`zh`, `ja`, `ko`, `en`, `es`, `fr`, `de`, etc.) or friendly names (`chinese`, `japanese`, `korean`, `english`, `spanish`, etc.). Locale variants supported: `zh-TW`, `zh-HK`, etc. Defaults to `en` (English). Stores preference in `.understand-anything/config.json` for consistency across incremental updates.
   - A directory path (e.g. `/path/to/repo` or `../other-project`) — Analyze the given directory instead of the current working directory
+  - `--skip-islands` — Skip Phase 6.5 LLM steps (trigger census + island research missions). The deterministic reachability pass still runs and tracks islands in `.understand-anything/islands.json`; only the census/mission subagents are skipped.
 
 ---
 
@@ -735,6 +736,98 @@ Pass these parameters in the dispatch prompt:
 
 ---
 
+## Phase 6.5 — REACHABILITY & ISLANDS
+
+Report to the user: `[Phase 6.5/7] Checking trigger reachability...`
+
+Every chain of nodes must be reachable from a trigger/entry point — or get
+explicitly tracked and investigated. This phase is deterministic first
+(free), interactive-budgeted LLM second. Skip the LLM steps (3-5) if
+`--skip-islands` is in `$ARGUMENTS`; step 1 always runs.
+
+1. **Deterministic pass (always).** Run:
+
+   ```bash
+   node <SKILL_DIR>/compute-reachability.mjs \
+     "$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json"
+   ```
+
+   Append every stderr `Warning:` line to `$PHASE_WARNINGS`. If the script
+   exits non-zero, append `"reachability step failed — graph saved without
+   reachability data"` and continue to Phase 7 (the script only rewrites on
+   success). If stdout reports `skipped (knowledge graph)`, continue to
+   Phase 7. Read `$PROJECT_ROOT/.understand-anything/islands.json` and note
+   `triggerCount` and the island list. If `--skip-islands`: report
+   `Phase 6.5 complete (deterministic only). <N> islands tracked in islands.json.`
+   and continue to Phase 7.
+
+2. **Report the tracked state (step 1 of the team effort: track; step 2:
+   the list).** Print a compact island list to the user: component id,
+   size, dominantCategory, first 3 files. Sorted by size, max 20 rows,
+   `... and N more` if longer.
+
+3. **Trigger census (1 subagent).** Skip when
+   `$PROJECT_ROOT/.understand-anything/triggers.json` already exists (an
+   earlier run's census remains valid; the deterministic pass already
+   consumed it). Otherwise dispatch a subagent using the `trigger-census`
+   agent definition (at `agents/trigger-census.md`) with this prompt:
+
+   > Census the triggers of the project at `$PROJECT_ROOT`.
+   > `$GRAPH_PATH` = `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`
+   > `$SCAN_RESULT` = `$PROJECT_ROOT/.understand-anything/intermediate/scan-result.json`
+   > `$LAYERS` = `$PROJECT_ROOT/.understand-anything/intermediate/layers.json`
+   > `$ISLANDS` = `$PROJECT_ROOT/.understand-anything/islands.json`
+   > Write `triggers.json` (and optionally `rules/triggers/census-learned.json`) as specified in your instructions.
+
+   Then re-run the step-1 command (picks up triggers.json + learned rules)
+   and refresh your island list from islands.json.
+
+4. **Research missions (interactive budget).** Initialize
+   `MISSIONS_RUN = 0`. Loop:
+
+   a. Read `islands.json`. If `missionPlan` is empty, break.
+   b. Determine this round's batch: the first `min(10, missionPlan.length)`
+      missions. **The first 10 missions overall run without asking.** If
+      `MISSIONS_RUN >= 10`, FIRST ask via AskUserQuestion:
+      > `<N> unresolved islands remain (<M> missions planned). So far <MISSIONS_RUN> missions ran.`
+      > 1. Look at the list together now (print the full island list, then ask again)
+      > 2. Run 10 more missions
+      > 3. Stop — remaining islands stay tracked as unresolved in islands.json
+      On option 1: print list, re-ask. On option 3: break.
+   c. For each mission in the batch (max 5 concurrent, same limit as
+      Phase 2), dispatch a subagent using the `island-researcher` agent
+      definition (at `agents/island-researcher.md`) with this prompt:
+
+      > Investigate mission `<missionId>` for the project at `$PROJECT_ROOT`.
+      > `$GRAPH_PATH` = `$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json`
+      > `$MISSION_ID` = `<missionId>`
+      > `$COMPONENTS` = `<JSON array of the mission's components (id, files, nodeIds) from islands.json>`
+      > `$TRIGGERS_SUMMARY` = `<node ids currently tagged entry-point, plus active rule ids>`
+      > Write your patch/rules/verdict files as specified in your instructions.
+
+      Increment `MISSIONS_RUN` per dispatched mission.
+   d. After the batch: apply new mission patches, then recompute:
+
+      ```bash
+      node <SKILL_DIR>/apply-graph-patches.mjs \
+        "$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json" \
+        --scan-result "$PROJECT_ROOT/.understand-anything/intermediate/scan-result.json" \
+        --patches "$PROJECT_ROOT/.understand-anything/patches"
+      node <SKILL_DIR>/compute-reachability.mjs \
+        "$PROJECT_ROOT/.understand-anything/intermediate/assembled-graph.json" \
+        --verdicts "$PROJECT_ROOT/.understand-anything/intermediate/mission-results"
+      ```
+
+      Append stderr `Warning:` lines to `$PHASE_WARNINGS`. Report:
+      `Mission round complete. Islands: <before> -> <after> (resolved <X>, isolated <Y>, unresolved <Z>).`
+
+5. **Phase completion.** Report:
+   `Phase 6.5 complete. Triggers: <triggerCount>. Reachable: <reachable>, attached: <attached>, isolated: <isolated> (with confidence), unresolved: <unresolved> (tracked in islands.json).`
+   If `islands.json.onlyViaTests` is non-empty, add one line:
+   `<N> nodes are referenced only by tests (candidates for dead production code) — listed in islands.json.onlyViaTests.`
+
+---
+
 ## Phase 7 — SAVE
 
 Report to the user: `[Phase 7/7] Saving knowledge graph...`
@@ -790,12 +883,15 @@ Report to the user: `[Phase 7/7] Saving knowledge graph...`
    mv "$PROJECT_ROOT/.understand-anything/tmp" "$TRASH/" 2>/dev/null || true
    ```
 
+   `islands.json`, `triggers.json`, `rules/`, and `patches/` live directly under `.understand-anything/`, outside `intermediate/` — this cleanup does not touch them. Only `intermediate/mission-results/` is trashed along with the rest of `intermediate/`; by this point its verdicts have already been folded into `islands.json` (Phase 6.5 step 4d), so nothing is lost.
+
 5. Report a summary to the user containing:
    - Project name and description
    - Files analyzed / total files (with breakdown by fileCategory: code, config, docs, infra, data, script, markup)
    - Nodes created (broken down by type: file, function, class, config, document, service, table, endpoint, pipeline, schema, resource)
    - Edges created (broken down by type)
    - Layers identified (with names)
+   - Reachability: trigger count, reachable/attached node counts, islands by status (isolated with confidence, unresolved) — from `islands.json`
    - Tour steps generated (count)
    - Any warnings from the reviewer
    - Path to the output file: `$PROJECT_ROOT/.understand-anything/knowledge-graph.json`
